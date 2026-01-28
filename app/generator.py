@@ -9,7 +9,10 @@ import gc
 import io
 import logging
 import os
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from vllm_omni.entrypoints.omni import Omni
 
 import torch
 from PIL import Image
@@ -36,7 +39,7 @@ class ImageGenerator:
             "MODEL_ID", "stabilityai/stable-diffusion-3.5-large-turbo"
         )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.omni: Optional[object] = None
+        self.omni: Optional["Omni"] = None
         self.is_loaded: bool = False
 
         logger.info(f"ImageGenerator initialized with model_id={self.model_id}")
