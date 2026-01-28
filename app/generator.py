@@ -91,6 +91,18 @@ class ImageGenerator:
                 except Exception as e:
                     logger.warning(f"Could not enable VAE slicing: {e}")
 
+                # Compile transformer with torch.compile for faster inference
+                try:
+                    if hasattr(torch, "compile") and hasattr(self.pipe, "transformer"):
+                        self.pipe.transformer = torch.compile(
+                            self.pipe.transformer,
+                            mode="max-autotune",
+                            fullgraph=False,
+                        )
+                        logger.info("Compiled transformer with torch.compile (max-autotune mode)")
+                except Exception as e:
+                    logger.warning(f"Could not compile transformer: {e}")
+
             self.is_loaded = True
             logger.info(f"Model loaded successfully on {self.device}")
 
