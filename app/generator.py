@@ -84,6 +84,25 @@ class ImageGenerator:
                 except Exception as e:
                     logger.warning(f"Could not enable CPU offload: {e}")
 
+                # Enable VAE slicing for memory-efficient batch processing
+                try:
+                    self.pipe.enable_vae_slicing()
+                    logger.info("Enabled VAE slicing for memory-efficient batch processing")
+                except Exception as e:
+                    logger.warning(f"Could not enable VAE slicing: {e}")
+
+                # Compile transformer with torch.compile for faster inference
+                try:
+                    if hasattr(torch, "compile") and hasattr(self.pipe, "transformer"):
+                        self.pipe.transformer = torch.compile(
+                            self.pipe.transformer,
+                            mode="max-autotune",
+                            fullgraph=False,
+                        )
+                        logger.info("Compiled transformer with torch.compile (max-autotune mode)")
+                except Exception as e:
+                    logger.warning(f"Could not compile transformer: {e}")
+
             self.is_loaded = True
             logger.info(f"Model loaded successfully on {self.device}")
 
@@ -146,24 +165,26 @@ class ImageGenerator:
         try:
             images: List[str] = []
 
-            for i in range(n):
-                # Generate the image
-                result = self.pipe(
-                    prompt=prompt,
-                    width=width,
-                    height=height,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                )
+            # Use inference mode for memory optimization and faster inference
+            with torch.inference_mode():
+                for i in range(n):
+                    # Generate the image
+                    result = self.pipe(
+                        prompt=prompt,
+                        width=width,
+                        height=height,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale,
+                    )
 
-                # Get the PIL image from the result
-                image = result.images[0]
+                    # Get the PIL image from the result
+                    image = result.images[0]
 
-                # Convert to base64
-                b64_image = self._image_to_base64(image)
-                images.append(b64_image)
+                    # Convert to base64
+                    b64_image = self._image_to_base64(image)
+                    images.append(b64_image)
 
-                logger.info(f"Generated image {i + 1}/{n}")
+                    logger.info(f"Generated image {i + 1}/{n}")
 
             # Clean up GPU memory after generation
             self._cleanup_memory()
@@ -191,7 +212,8 @@ class ImageGenerator:
             Base64-encoded PNG image string.
         """
         buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
+        # Use compress_level=1 for faster encoding (default is 6)
+        image.save(buffer, format="PNG", compress_level=1)
         buffer.seek(0)
         return base64.b64encode(buffer.read()).decode("utf-8")
 
