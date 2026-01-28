@@ -157,23 +157,24 @@ class ImageGenerator:
 
             # Use inference mode for memory optimization and faster inference
             with torch.inference_mode():
-                for i in range(n):
-                    # Generate the image
-                    result = self.omni(
-                        prompt=prompt,
-                        width=width,
-                        height=height,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,
-                    )
+                # Use vLLM-Omni's generate() method with num_outputs_per_prompt
+                outputs = self.omni.generate(
+                    prompt=prompt,
+                    width=width,
+                    height=height,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                    num_outputs_per_prompt=n,
+                )
 
-                    # Get the PIL image from the result
-                    image = result.images[0]
+                # Extract images from vLLM-Omni output structure
+                # Output format: outputs[0].request_output[0].images -> List[PIL.Image]
+                generated_images = outputs[0].request_output[0].images
 
+                for i, image in enumerate(generated_images):
                     # Convert to base64
                     b64_image = self._image_to_base64(image)
                     images.append(b64_image)
-
                     logger.info(f"Generated image {i + 1}/{n}")
 
             # Clean up GPU memory after generation
