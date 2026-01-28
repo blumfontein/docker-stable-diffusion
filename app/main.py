@@ -203,9 +203,11 @@ async def health_check() -> HealthResponse:
     Returns the service health status and whether the model is loaded.
     """
     model_loaded = generator is not None and generator.is_loaded
+    ready = model_loaded and executor is not None and generation_lock is not None
     return HealthResponse(
         status="healthy" if model_loaded else "degraded",
         model_loaded=model_loaded,
+        ready=ready,
     )
 
 

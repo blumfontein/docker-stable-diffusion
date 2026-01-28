@@ -165,3 +165,7 @@ class HealthResponse(BaseModel):
         ...,
         description="Whether the ML model is loaded and ready",
     )
+    ready: bool = Field(
+        ...,
+        description="Whether the service is ready to accept requests",
+    )
