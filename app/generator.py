@@ -1,6 +1,6 @@
 """Image generation module using Stable Diffusion 3.5.
 
-This module handles model loading and image generation using the diffusers library.
+This module handles model loading and image generation using the vLLM-Omni framework.
 It provides the ImageGenerator class for managing the Stable Diffusion pipeline.
 """
 
@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 class ImageGenerator:
     """Handles Stable Diffusion model loading and image generation.
 
-    This class manages the Stable Diffusion 3 pipeline, providing methods
+    This class manages the Stable Diffusion 3 pipeline via vLLM-Omni, providing methods
     to load the model and generate images from text prompts.
 
     Attributes:
         model_id: Hugging Face model identifier for the SD model.
         device: PyTorch device to run inference on (cuda/cpu).
-        pipe: The loaded StableDiffusion3Pipeline instance.
+        omni: The loaded vLLM-Omni Omni instance.
         is_loaded: Whether the model has been successfully loaded.
     """
 
@@ -37,7 +37,7 @@ class ImageGenerator:
             "MODEL_ID", "stabilityai/stable-diffusion-3.5-large-turbo"
         )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.pipe: Optional[object] = None
+        self.omni: Optional[object] = None
         self.is_loaded: bool = False
 
         logger.info(f"ImageGenerator initialized with model_id={self.model_id}")
@@ -54,7 +54,7 @@ class ImageGenerator:
             Exception: If model loading fails for any other reason.
         """
         # Import here to avoid loading heavy dependencies until needed
-        from diffusers import StableDiffusion3Pipeline
+        from vllm_omni.entrypoints.omni import Omni
 
         token = os.getenv("HUGGING_FACE_HUB_TOKEN")
         if not token:
@@ -70,25 +70,25 @@ class ImageGenerator:
             # Determine dtype based on device
             torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
 
-            self.pipe = StableDiffusion3Pipeline.from_pretrained(
+            self.omni = StableDiffusion3Pipeline.from_pretrained(
                 self.model_id,
                 torch_dtype=torch_dtype,
                 token=token,
             )
-            self.pipe.to(self.device)
+            self.omni.to(self.device)
 
             # Enable memory optimizations for CUDA
             if self.device == "cuda":
                 # Enable xFormers memory-efficient attention for faster inference
                 try:
-                    self.pipe.enable_xformers_memory_efficient_attention()
+                    self.omni.enable_xformers_memory_efficient_attention()
                     logger.info("Enabled xFormers memory-efficient attention")
                 except Exception as e:
                     logger.warning(f"Could not enable xFormers memory-efficient attention: {e}")
 
                 # Enable VAE slicing for memory-efficient batch processing
                 try:
-                    self.pipe.enable_vae_slicing()
+                    self.omni.enable_vae_slicing()
                     logger.info("Enabled VAE slicing for memory-efficient batch processing")
                 except Exception as e:
                     logger.warning(f"Could not enable VAE slicing: {e}")
@@ -96,15 +96,15 @@ class ImageGenerator:
                 # Compile transformer with torch.compile for faster inference
                 # Requires a C compiler (gcc) for Triton JIT compilation
                 try:
-                    if hasattr(torch, "compile") and hasattr(self.pipe, "transformer"):
+                    if hasattr(torch, "compile") and hasattr(self.omni, "transformer"):
                         if shutil.which("gcc") is None:
                             logger.warning(
                                 "C compiler (gcc) not found. Skipping torch.compile optimization. "
                                 "Install gcc for Triton JIT compilation support."
                             )
                         else:
-                            self.pipe.transformer = torch.compile(
-                                self.pipe.transformer,
+                            self.omni.transformer = torch.compile(
+                                self.omni.transformer,
                                 mode="reduce-overhead",
                                 fullgraph=False,
                             )
@@ -159,7 +159,7 @@ class ImageGenerator:
         Raises:
             RuntimeError: If model is not loaded or generation fails.
         """
-        if not self.is_loaded or self.pipe is None:
+        if not self.is_loaded or self.omni is None:
             raise RuntimeError(
                 "Model is not loaded. Call load_model() before generating images."
             )
@@ -178,7 +178,7 @@ class ImageGenerator:
             with torch.inference_mode():
                 for i in range(n):
                     # Generate the image
-                    result = self.pipe(
+                    result = self.omni(
                         prompt=prompt,
                         width=width,
                         height=height,
@@ -244,9 +244,9 @@ class ImageGenerator:
 
         Call this when shutting down the service to properly release resources.
         """
-        if self.pipe is not None:
-            del self.pipe
-            self.pipe = None
+        if self.omni is not None:
+            del self.omni
+            self.omni = None
             self.is_loaded = False
             # Use empty_cache when fully unloading model to reclaim GPU memory
             if self.device == "cuda":
@@ -264,7 +264,7 @@ class ImageGenerator:
         Raises:
             RuntimeError: If model is not loaded.
         """
-        if not self.is_loaded or self.pipe is None:
+        if not self.is_loaded or self.omni is None:
             raise RuntimeError(
                 "Model is not loaded. Call load_model() before warmup."
             )
@@ -274,7 +274,7 @@ class ImageGenerator:
         try:
             # Use a small image size for faster warmup
             with torch.inference_mode():
-                _ = self.pipe(
+                _ = self.omni(
                     prompt="warmup",
                     width=512,
                     height=512,
