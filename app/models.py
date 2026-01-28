@@ -7,7 +7,7 @@ This module defines request and response models that follow the OpenAI
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ResponseFormat(str, Enum):
@@ -81,6 +81,7 @@ class ImageData(BaseModel):
     """Individual image data in the response.
 
     Contains either base64-encoded image data or a URL.
+    Exactly one of b64_json or url must be provided.
     """
 
     b64_json: Optional[str] = Field(
@@ -91,6 +92,15 @@ class ImageData(BaseModel):
         default=None,
         description="URL to the generated image",
     )
+
+    @model_validator(mode="after")
+    def check_one_field_required(self) -> "ImageData":
+        """Validate that exactly one of b64_json or url is provided."""
+        if not self.b64_json and not self.url:
+            raise ValueError("Either b64_json or url must be provided")
+        if self.b64_json and self.url:
+            raise ValueError("Only one of b64_json or url should be provided")
+        return self
 
 
 class ImageGenerationResponse(BaseModel):
