@@ -126,10 +126,12 @@ docker stop sd-api
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `HUGGING_FACE_HUB_TOKEN` | **Yes** | - | Your Hugging Face access token for model download |
+| `HF_TOKEN` | No | - | Alternative to `HUGGING_FACE_HUB_TOKEN` for Hugging Face authentication |
 | `API_KEY` | No | - | API key for Bearer token authentication. If not set, authentication is disabled |
 | `MODEL_ID` | No | `stabilityai/stable-diffusion-3.5-large-turbo` | Hugging Face model identifier |
 | `HOST` | No | `0.0.0.0` | Server bind address |
 | `PORT` | No | `8000` | Server port |
+| `ENABLE_CACHE_DIT` | No | `false` | Enable DIT caching optimization for improved performance |
 
 ## Authentication
 
