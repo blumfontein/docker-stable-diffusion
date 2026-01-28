@@ -84,6 +84,13 @@ class ImageGenerator:
                 except Exception as e:
                     logger.warning(f"Could not enable CPU offload: {e}")
 
+                # Enable VAE slicing for memory-efficient batch processing
+                try:
+                    self.pipe.enable_vae_slicing()
+                    logger.info("Enabled VAE slicing for memory-efficient batch processing")
+                except Exception as e:
+                    logger.warning(f"Could not enable VAE slicing: {e}")
+
             self.is_loaded = True
             logger.info(f"Model loaded successfully on {self.device}")
 
