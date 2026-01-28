@@ -256,12 +256,14 @@ class ImageGenerator:
         try:
             # Use a small image size for faster warmup
             with torch.inference_mode():
-                _ = self.omni(
+                # Use vLLM-Omni's generate() method for warmup
+                _ = self.omni.generate(
                     prompt="warmup",
                     width=512,
                     height=512,
                     num_inference_steps=1,
                     guidance_scale=0.0,
+                    num_outputs_per_prompt=1,
                 )
             logger.info("Warmup completed successfully")
         except Exception as e:
