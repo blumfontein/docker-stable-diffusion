@@ -9,6 +9,7 @@ import gc
 import io
 import logging
 import os
+import shutil
 from typing import List, Optional, Tuple
 
 import torch
@@ -92,14 +93,21 @@ class ImageGenerator:
                     logger.warning(f"Could not enable VAE slicing: {e}")
 
                 # Compile transformer with torch.compile for faster inference
+                # Requires a C compiler (gcc) for Triton JIT compilation
                 try:
                     if hasattr(torch, "compile") and hasattr(self.pipe, "transformer"):
-                        self.pipe.transformer = torch.compile(
-                            self.pipe.transformer,
-                            mode="max-autotune",
-                            fullgraph=False,
-                        )
-                        logger.info("Compiled transformer with torch.compile (max-autotune mode)")
+                        if shutil.which("gcc") is None:
+                            logger.warning(
+                                "C compiler (gcc) not found. Skipping torch.compile optimization. "
+                                "Install gcc for Triton JIT compilation support."
+                            )
+                        else:
+                            self.pipe.transformer = torch.compile(
+                                self.pipe.transformer,
+                                mode="max-autotune",
+                                fullgraph=False,
+                            )
+                            logger.info("Compiled transformer with torch.compile (max-autotune mode)")
                 except Exception as e:
                     logger.warning(f"Could not compile transformer: {e}")
 
