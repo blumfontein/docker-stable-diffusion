@@ -38,11 +38,16 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Upgrade pip and install Python dependencies
+# Use PyTorch CUDA 12.6 wheels from the official PyTorch index
 RUN pip3 install --no-cache-dir --upgrade pip \
-    && pip3 install --no-cache-dir -r requirements.txt
+    && pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu126 -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
+
+# HuggingFace model cache directory for persistent storage
+# Mount a volume to /models to cache models across container restarts
+ENV HF_HOME=/models
 
 # Set environment variables with defaults
 # These can be overridden at runtime

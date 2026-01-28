@@ -32,8 +32,8 @@ class ImageGenerationRequest(BaseModel):
     n: int = Field(
         default=1,
         ge=1,
-        le=4,
-        description="Number of images to generate (1-4)",
+        le=1,
+        description="Number of images to generate (only 1 supported)",
     )
     size: str = Field(
         default="1024x1024",
@@ -47,11 +47,12 @@ class ImageGenerationRequest(BaseModel):
     @field_validator("size")
     @classmethod
     def validate_size(cls, v: str) -> str:
-        """Validate and normalize image size format."""
+        """Validate image size format."""
         valid_sizes = {"1024x1024", "512x512", "768x768"}
         if v not in valid_sizes:
-            # Default to 1024x1024 for unsupported sizes
-            return "1024x1024"
+            raise ValueError(
+                f"Invalid size '{v}'. Must be one of: {', '.join(sorted(valid_sizes))}"
+            )
         return v
 
     @field_validator("prompt")

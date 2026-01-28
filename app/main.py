@@ -42,6 +42,12 @@ generator: ImageGenerator | None = None
 # Thread pool executor for running blocking generation in background
 executor: ThreadPoolExecutor | None = None
 
+# Async lock for backpressure - prevents concurrent generation requests
+generation_lock: asyncio.Lock | None = None
+
+# Generation timeout in seconds
+GENERATION_TIMEOUT = 120
+
 # API Key configuration
 API_KEY: Optional[str] = os.getenv("API_KEY")
 if API_KEY:
@@ -133,9 +139,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Loads the Stable Diffusion model at startup and unloads it at shutdown.
     Also initializes and cleans up the thread pool executor.
     """
-    global generator, executor
+    global generator, executor, generation_lock
 
     logger.info("Starting up Stable Diffusion API server...")
+
+    # Initialize async lock for backpressure control
+    generation_lock = asyncio.Lock()
+    logger.info("Generation lock initialized")
 
     # Initialize thread pool executor for async generation
     # Use max_workers=1 to prevent concurrent GPU access issues
@@ -146,7 +156,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     generator = ImageGenerator()
     try:
         generator.load_model()
-        logger.info("Model loaded successfully, API ready to serve requests")
+        logger.info("Model loaded successfully")
+        # Warmup the model to prepare for inference
+        generator.warmup()
+        logger.info("Model warmed up, API ready to serve requests")
     except Exception as e:
         logger.error(f"Failed to load model during startup: {e}")
         # Continue running but model will not be available
@@ -197,6 +210,7 @@ async def health_check() -> HealthResponse:
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
         401: {"model": ErrorResponse, "description": "Unauthorized"},
+        429: {"model": ErrorResponse, "description": "Server busy (backpressure)"},
         500: {"model": ErrorResponse, "description": "Server error"},
         503: {"model": ErrorResponse, "description": "Service unavailable"},
     },
@@ -242,32 +256,69 @@ async def generate_images(
             },
         )
 
+    # Check if generation lock is available
+    if generation_lock is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Service is not ready. Please wait for startup to complete.",
+                "code": "service_not_ready",
+                "param": None,
+            },
+        )
+
+    # Backpressure: return 429 if another request is already being processed
+    if generation_lock.locked():
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Server is busy processing another request. Please try again later.",
+                "code": "rate_limit_exceeded",
+                "param": None,
+            },
+        )
+
     try:
-        # Run blocking generation in thread pool executor to avoid blocking event loop
-        loop = asyncio.get_event_loop()
-        generate_fn = partial(
-            generator.generate_image,
-            prompt=request.prompt,
-            size=request.size,
-            n=request.n,
+        async with generation_lock:
+            # Run blocking generation in thread pool executor to avoid blocking event loop
+            loop = asyncio.get_running_loop()
+            generate_fn = partial(
+                generator.generate_image,
+                prompt=request.prompt,
+                size=request.size,
+                n=request.n,
+            )
+            # Wrap in wait_for with timeout to prevent hanging requests
+            images_b64 = await asyncio.wait_for(
+                loop.run_in_executor(executor, generate_fn),
+                timeout=GENERATION_TIMEOUT,
+            )
+
+            # Build response based on requested format
+            image_data_list = []
+            for b64_image in images_b64:
+                if request.response_format == ResponseFormat.B64_JSON:
+                    image_data_list.append(ImageData(b64_json=b64_image))
+                else:
+                    # URL format not supported for local generation
+                    # Return b64_json anyway as fallback
+                    image_data_list.append(ImageData(b64_json=b64_image))
+
+            return ImageGenerationResponse(
+                created=int(time.time()),
+                data=image_data_list,
+            )
+
+    except asyncio.TimeoutError:
+        logger.error(f"Generation timed out after {GENERATION_TIMEOUT} seconds")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": f"Image generation timed out after {GENERATION_TIMEOUT} seconds.",
+                "code": "timeout",
+                "param": None,
+            },
         )
-        images_b64 = await loop.run_in_executor(executor, generate_fn)
-
-        # Build response based on requested format
-        image_data_list = []
-        for b64_image in images_b64:
-            if request.response_format == ResponseFormat.B64_JSON:
-                image_data_list.append(ImageData(b64_json=b64_image))
-            else:
-                # URL format not supported for local generation
-                # Return b64_json anyway as fallback
-                image_data_list.append(ImageData(b64_json=b64_image))
-
-        return ImageGenerationResponse(
-            created=int(time.time()),
-            data=image_data_list,
-        )
-
     except RuntimeError as e:
         error_msg = str(e)
         if "out of memory" in error_msg.lower():

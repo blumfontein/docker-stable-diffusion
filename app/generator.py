@@ -79,11 +79,12 @@ class ImageGenerator:
 
             # Enable memory optimizations for CUDA
             if self.device == "cuda":
+                # Enable xFormers memory-efficient attention for faster inference
                 try:
-                    self.pipe.enable_model_cpu_offload()
-                    logger.info("Enabled model CPU offload for memory optimization")
+                    self.pipe.enable_xformers_memory_efficient_attention()
+                    logger.info("Enabled xFormers memory-efficient attention")
                 except Exception as e:
-                    logger.warning(f"Could not enable CPU offload: {e}")
+                    logger.warning(f"Could not enable xFormers memory-efficient attention: {e}")
 
                 # Enable VAE slicing for memory-efficient batch processing
                 try:
@@ -104,10 +105,10 @@ class ImageGenerator:
                         else:
                             self.pipe.transformer = torch.compile(
                                 self.pipe.transformer,
-                                mode="max-autotune",
+                                mode="reduce-overhead",
                                 fullgraph=False,
                             )
-                            logger.info("Compiled transformer with torch.compile (max-autotune mode)")
+                            logger.info("Compiled transformer with torch.compile (reduce-overhead mode)")
                 except Exception as e:
                     logger.warning(f"Could not compile transformer: {e}")
 
@@ -201,6 +202,9 @@ class ImageGenerator:
 
         except torch.cuda.OutOfMemoryError as e:
             logger.error(f"CUDA out of memory during generation: {e}")
+            # Use aggressive cleanup for OOM recovery - empty_cache is warranted here
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             self._cleanup_memory()
             raise RuntimeError(
                 "GPU out of memory. Try reducing image size or number of images."
@@ -226,9 +230,13 @@ class ImageGenerator:
         return base64.b64encode(buffer.read()).decode("utf-8")
 
     def _cleanup_memory(self) -> None:
-        """Clean up GPU memory after generation."""
-        if self.device == "cuda":
-            torch.cuda.empty_cache()
+        """Clean up GPU memory after generation.
+
+        Note: This only runs gc.collect() for routine cleanup.
+        torch.cuda.empty_cache() is intentionally NOT called here as it can
+        hurt performance when called frequently. empty_cache is only used
+        in OOM recovery and model unloading scenarios.
+        """
         gc.collect()
 
     def unload_model(self) -> None:
@@ -240,5 +248,40 @@ class ImageGenerator:
             del self.pipe
             self.pipe = None
             self.is_loaded = False
+            # Use empty_cache when fully unloading model to reclaim GPU memory
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             self._cleanup_memory()
             logger.info("Model unloaded and memory cleaned up")
+
+    def warmup(self) -> None:
+        """Perform a warmup inference to initialize CUDA kernels.
+
+        This runs a small dummy inference to warm up the model and compile
+        any lazy-loaded CUDA kernels. Call this after load_model() to ensure
+        the first real inference is fast.
+
+        Raises:
+            RuntimeError: If model is not loaded.
+        """
+        if not self.is_loaded or self.pipe is None:
+            raise RuntimeError(
+                "Model is not loaded. Call load_model() before warmup."
+            )
+
+        logger.info("Running warmup inference...")
+
+        try:
+            # Use a small image size for faster warmup
+            with torch.inference_mode():
+                _ = self.pipe(
+                    prompt="warmup",
+                    width=512,
+                    height=512,
+                    num_inference_steps=1,
+                    guidance_scale=0.0,
+                )
+            logger.info("Warmup completed successfully")
+        except Exception as e:
+            logger.warning(f"Warmup inference failed: {e}")
+            # Don't raise - warmup failure shouldn't prevent service from starting

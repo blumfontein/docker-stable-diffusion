@@ -1,10 +1,15 @@
 # Stable Diffusion 3.5 Large Turbo API Dependencies
 
+# PyTorch CUDA 12.6 wheels
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.3.1+cu126
+torchvision==0.18.1+cu126
+
 # ML/AI Libraries
-diffusers>=0.25.0
-transformers>=4.36.0
-torch>=2.1.0
-accelerate>=0.25.0
+diffusers>=0.30.0
+transformers>=4.44.0
+accelerate>=0.30.0
+xformers
 safetensors>=0.4.0
 
 # Web Framework
@@ -18,4 +23,4 @@ pillow>=10.0.0
 python-multipart>=0.0.6
 
 # Hugging Face Hub (for model downloads)
-huggingface-hub>=0.20.0
+huggingface-hub>=0.23.0
