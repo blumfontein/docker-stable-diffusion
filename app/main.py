@@ -153,6 +153,7 @@ async def health_check() -> HealthResponse:
     response_model=ImageGenerationResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
         500: {"model": ErrorResponse, "description": "Server error"},
         503: {"model": ErrorResponse, "description": "Service unavailable"},
     },
@@ -161,6 +162,7 @@ async def health_check() -> HealthResponse:
 )
 async def generate_images(
     request: ImageGenerationRequest,
+    _: None = Depends(verify_api_key),
 ) -> ImageGenerationResponse:
     """Generate images from a text prompt.
 
