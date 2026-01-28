@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-venv \
     python3-pip \
+    gcc \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
@@ -22,6 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Set C compiler for Triton JIT compilation
+ENV CC=gcc
 
 # Set Python 3.10 as default
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
