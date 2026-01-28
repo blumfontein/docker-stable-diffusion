@@ -1,0 +1,21 @@
+# Stable Diffusion 3.5 Large Turbo API Dependencies
+
+# ML/AI Libraries
+diffusers>=0.25.0
+transformers>=4.36.0
+torch>=2.1.0
+accelerate>=0.25.0
+safetensors>=0.4.0
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Image Processing
+pillow>=10.0.0
+
+# Request Handling
+python-multipart>=0.0.6
+
+# Hugging Face Hub (for model downloads)
+huggingface-hub>=0.20.0
