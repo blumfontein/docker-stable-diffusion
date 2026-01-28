@@ -56,38 +56,66 @@ if not API_KEY:
     )
 
 
-async def verify_api_key(x_api_key: Optional[str] = Header(None)) -> None:
-    """Verify the API key from the X-API-Key header.
+async def verify_api_key(authorization: Optional[str] = Header(None)) -> None:
+    """Verify the Bearer token from the Authorization header.
 
-    This dependency validates the API key sent in the request header against
-    the API_KEY environment variable. If API_KEY is not configured, all
+    This dependency validates the Bearer token sent in the Authorization header
+    against the API_KEY environment variable. If API_KEY is not configured, all
     requests are allowed (development mode).
 
     Args:
-        x_api_key: The API key from the X-API-Key header.
+        authorization: The Authorization header value (expected format: "Bearer <token>").
 
     Raises:
-        HTTPException: 401 if API key is missing or invalid.
+        HTTPException: 401 if Authorization header is missing, malformed, or token is invalid.
     """
     # If API_KEY is not configured, allow all requests (dev mode)
     if not API_KEY:
         return
 
-    # Check for missing API key
-    if not x_api_key or not x_api_key.strip():
-        logger.warning("Request rejected: missing API key")
+    # Check for missing Authorization header
+    if not authorization or not authorization.strip():
+        logger.warning("Request rejected: missing Authorization header")
         raise HTTPException(
             status_code=401,
             detail={
-                "error": "API key is required. Please provide X-API-Key header.",
+                "error": "Authorization header is required. "
+                "Please provide 'Authorization: Bearer <token>' header.",
+                "code": "missing_api_key",
+                "param": None,
+            },
+        )
+
+    # Parse Bearer token from Authorization header
+    auth_value = authorization.strip()
+    if not auth_value.startswith("Bearer "):
+        logger.warning("Request rejected: invalid Authorization header format")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "Invalid Authorization header format. "
+                "Expected 'Bearer <token>'.",
+                "code": "invalid_auth_format",
+                "param": None,
+            },
+        )
+
+    token = auth_value[len("Bearer "):]
+    if not token or not token.strip():
+        logger.warning("Request rejected: empty Bearer token")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "Bearer token is empty. "
+                "Please provide a valid token.",
                 "code": "missing_api_key",
                 "param": None,
             },
         )
 
     # Use constant-time comparison to prevent timing attacks
-    if not secrets.compare_digest(x_api_key, API_KEY):
-        logger.warning("Request rejected: invalid API key")
+    if not secrets.compare_digest(token.strip(), API_KEY):
+        logger.warning("Request rejected: invalid Bearer token")
         raise HTTPException(
             status_code=401,
             detail={
