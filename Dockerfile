@@ -65,6 +65,9 @@ ENV PORT=8000
 # Example: docker run -e API_KEY=your-secret-key ...
 ENV API_KEY=""
 
+# Hugging Face token for model access (alternative: HF_TOKEN)
+ENV HUGGING_FACE_HUB_TOKEN=""
+
 # Expose the API port
 EXPOSE 8000
 
