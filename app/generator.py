@@ -200,7 +200,8 @@ class ImageGenerator:
             Base64-encoded PNG image string.
         """
         buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
+        # Use compress_level=1 for faster encoding (default is 6)
+        image.save(buffer, format="PNG", compress_level=1)
         buffer.seek(0)
         return base64.b64encode(buffer.read()).decode("utf-8")
 
