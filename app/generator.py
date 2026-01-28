@@ -19,6 +19,9 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# Threshold for batch cleanup - use empty_cache for batches larger than this
+BATCH_CLEANUP_THRESHOLD = 1
+
 
 class ImageGenerator:
     """Handles Stable Diffusion model loading and image generation.
@@ -180,8 +183,8 @@ class ImageGenerator:
                     images.append(b64_image)
                     logger.info(f"Generated image {i + 1}/{n}")
 
-            # Clean up GPU memory after generation
-            self._cleanup_memory()
+            # Clean up GPU memory after generation (with batch size for conditional empty_cache)
+            self._cleanup_memory(batch_size=n)
 
             return images
 
@@ -214,15 +217,21 @@ class ImageGenerator:
         buffer.seek(0)
         return base64.b64encode(buffer.read()).decode("utf-8")
 
-    def _cleanup_memory(self) -> None:
+    def _cleanup_memory(self, batch_size: int = 1) -> None:
         """Clean up GPU memory after generation.
 
-        Note: This only runs gc.collect() for routine cleanup.
-        torch.cuda.empty_cache() is intentionally NOT called here as it can
-        hurt performance when called frequently. empty_cache is only used
-        in OOM recovery and model unloading scenarios.
+        Args:
+            batch_size: Number of images that were generated in this batch.
+
+        Note: gc.collect() is always run for routine cleanup.
+        torch.cuda.empty_cache() is only called for large batches (n > BATCH_CLEANUP_THRESHOLD)
+        to avoid performance overhead from frequent cache clearing.
         """
         gc.collect()
+        # Use empty_cache for large batch cleanup to reclaim GPU memory
+        if batch_size > BATCH_CLEANUP_THRESHOLD and self.device == "cuda":
+            torch.cuda.empty_cache()
+            logger.debug(f"Cleared CUDA cache after batch of {batch_size} images")
 
     def unload_model(self) -> None:
         """Unload the model and free memory.
