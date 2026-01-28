@@ -3,9 +3,9 @@
 # PyTorch CUDA 12.6 wheels
 --extra-index-url https://download.pytorch.org/whl/cu126
 torch==2.6.0+cu126
-torchvision==0.21.0+cu126
 
-# ML/AI Libraries
+# Transitive Dependencies (pinned for version control)
+# safetensors is required by vLLM for efficient model weight loading
 safetensors>=0.4.0
 
 # vLLM and vLLM-Omni for optimized inference
@@ -19,8 +19,5 @@ uvicorn[standard]>=0.27.0
 # Image Processing
 pillow>=10.0.0
 
-# Request Handling
-python-multipart>=0.0.6
-
-# Hugging Face Hub (for model downloads)
+# huggingface-hub is required by vLLM for downloading models from Hugging Face
 huggingface-hub>=0.23.0
