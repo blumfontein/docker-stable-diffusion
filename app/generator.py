@@ -79,11 +79,12 @@ class ImageGenerator:
 
             # Enable memory optimizations for CUDA
             if self.device == "cuda":
+                # Enable xFormers memory-efficient attention for faster inference
                 try:
-                    self.pipe.enable_model_cpu_offload()
-                    logger.info("Enabled model CPU offload for memory optimization")
+                    self.pipe.enable_xformers_memory_efficient_attention()
+                    logger.info("Enabled xFormers memory-efficient attention")
                 except Exception as e:
-                    logger.warning(f"Could not enable CPU offload: {e}")
+                    logger.warning(f"Could not enable xFormers memory-efficient attention: {e}")
 
                 # Enable VAE slicing for memory-efficient batch processing
                 try:
@@ -104,10 +105,10 @@ class ImageGenerator:
                         else:
                             self.pipe.transformer = torch.compile(
                                 self.pipe.transformer,
-                                mode="max-autotune",
+                                mode="reduce-overhead",
                                 fullgraph=False,
                             )
-                            logger.info("Compiled transformer with torch.compile (max-autotune mode)")
+                            logger.info("Compiled transformer with torch.compile (reduce-overhead mode)")
                 except Exception as e:
                     logger.warning(f"Could not compile transformer: {e}")
 
