@@ -37,14 +37,16 @@ Before running this API, ensure you have:
 # 1. Build the Docker image
 docker build -t sd-api .
 
-# 2. Run with your Hugging Face token
+# 2. Run with your Hugging Face token and API key
 docker run --gpus all -p 8000:8000 \
   -e HUGGING_FACE_HUB_TOKEN=hf_your_token_here \
+  -e API_KEY=your_api_key_here \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   sd-api
 
 # 3. Test the API
 curl -X POST http://localhost:8000/v1/images/generations \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "A beautiful sunset over mountains", "n": 1, "size": "1024x1024"}'
 ```
@@ -76,6 +78,7 @@ docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t sd-api:latest .
 ```bash
 docker run --gpus all -p 8000:8000 \
   -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+  -e API_KEY=your_api_key_here \
   sd-api
 ```
 
@@ -86,6 +89,7 @@ Cache downloaded models to avoid re-downloading on container restart:
 ```bash
 docker run --gpus all -p 8000:8000 \
   -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+  -e API_KEY=your_api_key_here \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   sd-api
 ```
@@ -95,6 +99,7 @@ docker run --gpus all -p 8000:8000 \
 ```bash
 docker run --gpus all -p 8000:8000 \
   -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+  -e API_KEY=your_api_key_here \
   -e MODEL_ID=stabilityai/stable-diffusion-3.5-large \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   sd-api
@@ -105,6 +110,7 @@ docker run --gpus all -p 8000:8000 \
 ```bash
 docker run -d --name sd-api --gpus all -p 8000:8000 \
   -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+  -e API_KEY=your_api_key_here \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   sd-api
 
@@ -120,9 +126,38 @@ docker stop sd-api
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `HUGGING_FACE_HUB_TOKEN` | **Yes** | - | Your Hugging Face access token for model download |
+| `API_KEY` | No | - | API key for Bearer token authentication. If not set, authentication is disabled |
 | `MODEL_ID` | No | `stabilityai/stable-diffusion-3.5-large-turbo` | Hugging Face model identifier |
 | `HOST` | No | `0.0.0.0` | Server bind address |
 | `PORT` | No | `8000` | Server port |
+
+## Authentication
+
+The API supports Bearer token authentication via the `Authorization` header. Authentication is enabled by setting the `API_KEY` environment variable.
+
+### How It Works
+
+- **When `API_KEY` is set:** All requests to the `/v1/images/generations` endpoint must include a valid `Authorization: Bearer <token>` header.
+- **When `API_KEY` is not set:** Authentication is disabled and all requests are allowed (development mode).
+
+### Example: Authenticated Request
+
+```bash
+curl -X POST http://localhost:8000/v1/images/generations \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "A beautiful sunset over mountains"}'
+```
+
+### Authentication Errors
+
+| HTTP Status | Scenario | Message |
+|-------------|----------|---------|
+| 401 | Missing header | `Authorization header is required` |
+| 401 | Invalid format | `Invalid Authorization header format. Expected 'Bearer <token>'` |
+| 401 | Wrong token | `Invalid API key` |
+
+> **Note:** The `/health` and `/docs` endpoints do not require authentication.
 
 ## API Endpoints
 
@@ -168,6 +203,7 @@ Generate images from a text prompt using Stable Diffusion 3.5.
 
 ```bash
 curl -X POST http://localhost:8000/v1/images/generations \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "A beautiful sunset over mountains, digital art, high quality",
@@ -195,6 +231,7 @@ curl -X POST http://localhost:8000/v1/images/generations \
 ```bash
 # Generate and save to file
 curl -s -X POST http://localhost:8000/v1/images/generations \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "A majestic mountain landscape"}' \
   | jq -r '.data[0].b64_json' | base64 -d > output.png
@@ -234,6 +271,7 @@ The API returns OpenAI-compatible error responses:
 
 | HTTP Status | Code | Description |
 |-------------|------|-------------|
+| 401 | `authentication_error` | Missing, invalid, or incorrect Bearer token |
 | 400 | `validation_error` | Invalid request parameters |
 | 500 | `gpu_out_of_memory` | GPU ran out of memory during generation |
 | 500 | `generation_failed` | Image generation failed |
@@ -254,6 +292,7 @@ services:
       - "8000:8000"
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+      - API_KEY=${API_KEY}
       - MODEL_ID=stabilityai/stable-diffusion-3.5-large-turbo
     volumes:
       - huggingface-cache:/root/.cache/huggingface
@@ -279,6 +318,7 @@ Run with:
 
 ```bash
 export HUGGING_FACE_HUB_TOKEN=your_token_here
+export API_KEY=your_api_key_here
 docker-compose up -d
 ```
 
@@ -291,6 +331,7 @@ import requests
 # Generate an image
 response = requests.post(
     "http://localhost:8000/v1/images/generations",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
     json={
         "prompt": "A cyberpunk city at night, neon lights, rain",
         "n": 1,
@@ -319,7 +360,7 @@ from openai import OpenAI
 # Point to local SD API
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="not-needed"  # API key not required for local deployment
+    api_key="your-api-key"  # Must match the API_KEY environment variable
 )
 
 response = client.images.generate(
