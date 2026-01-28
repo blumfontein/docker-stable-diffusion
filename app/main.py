@@ -6,11 +6,14 @@ using the Stable Diffusion 3.5 model.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import secrets
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import AsyncGenerator, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -35,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 # Global generator instance
 generator: ImageGenerator | None = None
+
+# Thread pool executor for running blocking generation in background
+executor: ThreadPoolExecutor | None = None
 
 # API Key configuration
 API_KEY: Optional[str] = os.getenv("API_KEY")
@@ -97,10 +103,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for model loading and cleanup.
 
     Loads the Stable Diffusion model at startup and unloads it at shutdown.
+    Also initializes and cleans up the thread pool executor.
     """
-    global generator
+    global generator, executor
 
     logger.info("Starting up Stable Diffusion API server...")
+
+    # Initialize thread pool executor for async generation
+    # Use max_workers=1 to prevent concurrent GPU access issues
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sd_generator")
+    logger.info("Thread pool executor initialized")
 
     # Initialize and load the model
     generator = ImageGenerator()
@@ -118,6 +130,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Shutting down API server...")
     if generator is not None:
         generator.unload_model()
+    if executor is not None:
+        executor.shutdown(wait=True)
+        logger.info("Thread pool executor shutdown complete")
     logger.info("Cleanup complete")
 
 
@@ -188,13 +203,27 @@ async def generate_images(
             },
         )
 
+    # Check if executor is available
+    if executor is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Service is not ready. Please wait for startup to complete.",
+                "code": "service_not_ready",
+                "param": None,
+            },
+        )
+
     try:
-        # Generate images
-        images_b64 = generator.generate_image(
+        # Run blocking generation in thread pool executor to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        generate_fn = partial(
+            generator.generate_image,
             prompt=request.prompt,
             size=request.size,
             n=request.n,
         )
+        images_b64 = await loop.run_in_executor(executor, generate_fn)
 
         # Build response based on requested format
         image_data_list = []
