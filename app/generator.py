@@ -146,24 +146,26 @@ class ImageGenerator:
         try:
             images: List[str] = []
 
-            for i in range(n):
-                # Generate the image
-                result = self.pipe(
-                    prompt=prompt,
-                    width=width,
-                    height=height,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                )
+            # Use inference mode for memory optimization and faster inference
+            with torch.inference_mode():
+                for i in range(n):
+                    # Generate the image
+                    result = self.pipe(
+                        prompt=prompt,
+                        width=width,
+                        height=height,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale,
+                    )
 
-                # Get the PIL image from the result
-                image = result.images[0]
+                    # Get the PIL image from the result
+                    image = result.images[0]
 
-                # Convert to base64
-                b64_image = self._image_to_base64(image)
-                images.append(b64_image)
+                    # Convert to base64
+                    b64_image = self._image_to_base64(image)
+                    images.append(b64_image)
 
-                logger.info(f"Generated image {i + 1}/{n}")
+                    logger.info(f"Generated image {i + 1}/{n}")
 
             # Clean up GPU memory after generation
             self._cleanup_memory()
