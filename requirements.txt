@@ -12,6 +12,10 @@ accelerate>=0.30.0
 xformers
 safetensors>=0.4.0
 
+# vLLM and vLLM-Omni for optimized inference
+vllm==0.12.0
+git+https://github.com/vllm-project/vllm-omni.git
+
 # Web Framework
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
