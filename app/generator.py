@@ -73,7 +73,7 @@ class ImageGenerator:
 
         try:
             # Check if Cache-DiT should be enabled via environment variable
-            enable_cache_dit = os.getenv("ENABLE_CACHE_DIT", "false").lower() == "true"
+            enable_cache_dit = os.getenv("ENABLE_CACHE_DIT", "true").lower() == "true"
 
             if enable_cache_dit:
                 # Initialize with Cache-DiT acceleration for 1.5-2.2x speedup

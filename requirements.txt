@@ -2,7 +2,7 @@
 
 # PyTorch CUDA 12.6 wheels
 --extra-index-url https://download.pytorch.org/whl/cu126
-torch==2.6.0+cu126
+torch==2.9.0
 
 # Transitive Dependencies (pinned for version control)
 # safetensors is required by vLLM for efficient model weight loading
