@@ -9,7 +9,6 @@ import gc
 import io
 import logging
 import os
-import shutil
 from typing import List, Optional, Tuple
 
 import torch
@@ -44,73 +43,55 @@ class ImageGenerator:
         logger.info(f"Using device: {self.device}")
 
     def load_model(self) -> None:
-        """Load the Stable Diffusion model from Hugging Face.
+        """Load the Stable Diffusion model via vLLM-Omni.
 
         Downloads and loads the model specified by MODEL_ID environment variable.
-        Uses float16 precision for GPU memory efficiency.
+        Uses vLLM-Omni's Omni class for optimized inference.
 
         Raises:
-            RuntimeError: If HUGGING_FACE_HUB_TOKEN is not set.
+            RuntimeError: If HUGGING_FACE_HUB_TOKEN is not set or CUDA not available.
             Exception: If model loading fails for any other reason.
         """
         # Import here to avoid loading heavy dependencies until needed
         from vllm_omni.entrypoints.omni import Omni
 
-        token = os.getenv("HUGGING_FACE_HUB_TOKEN")
+        token = os.getenv("HUGGING_FACE_HUB_TOKEN") or os.getenv("HF_TOKEN")
         if not token:
             raise RuntimeError(
-                "HUGGING_FACE_HUB_TOKEN environment variable is required. "
+                "HUGGING_FACE_HUB_TOKEN or HF_TOKEN environment variable is required. "
                 "Please set it to your Hugging Face access token."
+            )
+
+        # vLLM requires CUDA
+        if self.device != "cuda":
+            raise RuntimeError(
+                "vLLM-Omni requires CUDA. No CUDA device available."
             )
 
         logger.info(f"Loading model: {self.model_id}")
         logger.info("This may take several minutes on first run...")
 
         try:
-            # Determine dtype based on device
-            torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
+            # Check if Cache-DiT should be enabled via environment variable
+            enable_cache_dit = os.getenv("ENABLE_CACHE_DIT", "false").lower() == "true"
 
-            self.omni = StableDiffusion3Pipeline.from_pretrained(
-                self.model_id,
-                torch_dtype=torch_dtype,
-                token=token,
-            )
-            self.omni.to(self.device)
-
-            # Enable memory optimizations for CUDA
-            if self.device == "cuda":
-                # Enable xFormers memory-efficient attention for faster inference
-                try:
-                    self.omni.enable_xformers_memory_efficient_attention()
-                    logger.info("Enabled xFormers memory-efficient attention")
-                except Exception as e:
-                    logger.warning(f"Could not enable xFormers memory-efficient attention: {e}")
-
-                # Enable VAE slicing for memory-efficient batch processing
-                try:
-                    self.omni.enable_vae_slicing()
-                    logger.info("Enabled VAE slicing for memory-efficient batch processing")
-                except Exception as e:
-                    logger.warning(f"Could not enable VAE slicing: {e}")
-
-                # Compile transformer with torch.compile for faster inference
-                # Requires a C compiler (gcc) for Triton JIT compilation
-                try:
-                    if hasattr(torch, "compile") and hasattr(self.omni, "transformer"):
-                        if shutil.which("gcc") is None:
-                            logger.warning(
-                                "C compiler (gcc) not found. Skipping torch.compile optimization. "
-                                "Install gcc for Triton JIT compilation support."
-                            )
-                        else:
-                            self.omni.transformer = torch.compile(
-                                self.omni.transformer,
-                                mode="reduce-overhead",
-                                fullgraph=False,
-                            )
-                            logger.info("Compiled transformer with torch.compile (reduce-overhead mode)")
-                except Exception as e:
-                    logger.warning(f"Could not compile transformer: {e}")
+            if enable_cache_dit:
+                # Initialize with Cache-DiT acceleration for 1.5-2.2x speedup
+                logger.info("Initializing Omni with Cache-DiT acceleration...")
+                self.omni = Omni(
+                    model=self.model_id,
+                    cache_backend="cache_dit",
+                    cache_config={
+                        "max_warmup_steps": 4,  # Optimized for turbo models
+                        "Fn_compute_blocks": 1,
+                        "residual_diff_threshold": 0.24,
+                    },
+                )
+                logger.info("Cache-DiT acceleration enabled")
+            else:
+                # Basic initialization without Cache-DiT
+                logger.info("Initializing Omni...")
+                self.omni = Omni(model=self.model_id)
 
             self.is_loaded = True
             logger.info(f"Model loaded successfully on {self.device}")
