@@ -4,12 +4,16 @@ This module provides an OpenAI-compatible REST API for text-to-image generation
 using the Stable Diffusion 3.5 model.
 """
 
+from __future__ import annotations
+
 import logging
+import os
+import secrets
 import time
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.generator import ImageGenerator
@@ -31,6 +35,61 @@ logger = logging.getLogger(__name__)
 
 # Global generator instance
 generator: ImageGenerator | None = None
+
+# API Key configuration
+API_KEY: Optional[str] = os.getenv("API_KEY")
+if API_KEY:
+    # Strip whitespace from API key
+    API_KEY = API_KEY.strip() if API_KEY.strip() else None
+
+if not API_KEY:
+    logger.warning(
+        "API_KEY environment variable is not set. "
+        "API authentication is DISABLED. "
+        "Set API_KEY to enable authentication."
+    )
+
+
+async def verify_api_key(x_api_key: Optional[str] = Header(None)) -> None:
+    """Verify the API key from the X-API-Key header.
+
+    This dependency validates the API key sent in the request header against
+    the API_KEY environment variable. If API_KEY is not configured, all
+    requests are allowed (development mode).
+
+    Args:
+        x_api_key: The API key from the X-API-Key header.
+
+    Raises:
+        HTTPException: 401 if API key is missing or invalid.
+    """
+    # If API_KEY is not configured, allow all requests (dev mode)
+    if not API_KEY:
+        return
+
+    # Check for missing API key
+    if not x_api_key or not x_api_key.strip():
+        logger.warning("Request rejected: missing API key")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "API key is required. Please provide X-API-Key header.",
+                "code": "missing_api_key",
+                "param": None,
+            },
+        )
+
+    # Use constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(x_api_key, API_KEY):
+        logger.warning("Request rejected: invalid API key")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "Invalid API key provided.",
+                "code": "invalid_api_key",
+                "param": None,
+            },
+        )
 
 
 @asynccontextmanager
@@ -94,6 +153,7 @@ async def health_check() -> HealthResponse:
     response_model=ImageGenerationResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
         500: {"model": ErrorResponse, "description": "Server error"},
         503: {"model": ErrorResponse, "description": "Service unavailable"},
     },
@@ -102,6 +162,7 @@ async def health_check() -> HealthResponse:
 )
 async def generate_images(
     request: ImageGenerationRequest,
+    _: None = Depends(verify_api_key),
 ) -> ImageGenerationResponse:
     """Generate images from a text prompt.
 

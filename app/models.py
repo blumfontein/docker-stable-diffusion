@@ -143,6 +143,22 @@ class ErrorResponse(BaseModel):
     )
 
 
+class UnauthorizedResponse(BaseModel):
+    """Response model for 401 Unauthorized errors.
+
+    Returned when API key authentication fails.
+    """
+
+    error: str = Field(
+        default="Invalid or missing API key",
+        description="Error message for authentication failure",
+    )
+    code: str = Field(
+        default="unauthorized",
+        description="Error code indicating authentication failure",
+    )
+
+
 class HealthResponse(BaseModel):
     """Response model for health check endpoint."""
 

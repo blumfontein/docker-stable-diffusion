@@ -46,6 +46,12 @@ ENV MODEL_ID=stabilityai/stable-diffusion-3.5-large-turbo
 ENV HOST=0.0.0.0
 ENV PORT=8000
 
+# API Key for authentication (optional)
+# If set, all requests must include X-API-Key header with this value
+# If not set, authentication is disabled
+# Example: docker run -e API_KEY=your-secret-key ...
+ENV API_KEY=""
+
 # Expose the API port
 EXPOSE 8000
 
