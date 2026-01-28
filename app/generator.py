@@ -1,6 +1,6 @@
 """Image generation module using Stable Diffusion 3.5.
 
-This module handles model loading and image generation using the diffusers library.
+This module handles model loading and image generation using the vLLM-Omni framework.
 It provides the ImageGenerator class for managing the Stable Diffusion pipeline.
 """
 
@@ -9,7 +9,6 @@ import gc
 import io
 import logging
 import os
-import shutil
 from typing import List, Optional, Tuple
 
 import torch
@@ -21,13 +20,13 @@ logger = logging.getLogger(__name__)
 class ImageGenerator:
     """Handles Stable Diffusion model loading and image generation.
 
-    This class manages the Stable Diffusion 3 pipeline, providing methods
+    This class manages the Stable Diffusion 3 pipeline via vLLM-Omni, providing methods
     to load the model and generate images from text prompts.
 
     Attributes:
         model_id: Hugging Face model identifier for the SD model.
         device: PyTorch device to run inference on (cuda/cpu).
-        pipe: The loaded StableDiffusion3Pipeline instance.
+        omni: The loaded vLLM-Omni Omni instance.
         is_loaded: Whether the model has been successfully loaded.
     """
 
@@ -37,80 +36,62 @@ class ImageGenerator:
             "MODEL_ID", "stabilityai/stable-diffusion-3.5-large-turbo"
         )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.pipe: Optional[object] = None
+        self.omni: Optional[object] = None
         self.is_loaded: bool = False
 
         logger.info(f"ImageGenerator initialized with model_id={self.model_id}")
         logger.info(f"Using device: {self.device}")
 
     def load_model(self) -> None:
-        """Load the Stable Diffusion model from Hugging Face.
+        """Load the Stable Diffusion model via vLLM-Omni.
 
         Downloads and loads the model specified by MODEL_ID environment variable.
-        Uses float16 precision for GPU memory efficiency.
+        Uses vLLM-Omni's Omni class for optimized inference.
 
         Raises:
-            RuntimeError: If HUGGING_FACE_HUB_TOKEN is not set.
+            RuntimeError: If HUGGING_FACE_HUB_TOKEN is not set or CUDA not available.
             Exception: If model loading fails for any other reason.
         """
         # Import here to avoid loading heavy dependencies until needed
-        from diffusers import StableDiffusion3Pipeline
+        from vllm_omni.entrypoints.omni import Omni
 
-        token = os.getenv("HUGGING_FACE_HUB_TOKEN")
+        token = os.getenv("HUGGING_FACE_HUB_TOKEN") or os.getenv("HF_TOKEN")
         if not token:
             raise RuntimeError(
-                "HUGGING_FACE_HUB_TOKEN environment variable is required. "
+                "HUGGING_FACE_HUB_TOKEN or HF_TOKEN environment variable is required. "
                 "Please set it to your Hugging Face access token."
+            )
+
+        # vLLM requires CUDA
+        if self.device != "cuda":
+            raise RuntimeError(
+                "vLLM-Omni requires CUDA. No CUDA device available."
             )
 
         logger.info(f"Loading model: {self.model_id}")
         logger.info("This may take several minutes on first run...")
 
         try:
-            # Determine dtype based on device
-            torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
+            # Check if Cache-DiT should be enabled via environment variable
+            enable_cache_dit = os.getenv("ENABLE_CACHE_DIT", "false").lower() == "true"
 
-            self.pipe = StableDiffusion3Pipeline.from_pretrained(
-                self.model_id,
-                torch_dtype=torch_dtype,
-                token=token,
-            )
-            self.pipe.to(self.device)
-
-            # Enable memory optimizations for CUDA
-            if self.device == "cuda":
-                # Enable xFormers memory-efficient attention for faster inference
-                try:
-                    self.pipe.enable_xformers_memory_efficient_attention()
-                    logger.info("Enabled xFormers memory-efficient attention")
-                except Exception as e:
-                    logger.warning(f"Could not enable xFormers memory-efficient attention: {e}")
-
-                # Enable VAE slicing for memory-efficient batch processing
-                try:
-                    self.pipe.enable_vae_slicing()
-                    logger.info("Enabled VAE slicing for memory-efficient batch processing")
-                except Exception as e:
-                    logger.warning(f"Could not enable VAE slicing: {e}")
-
-                # Compile transformer with torch.compile for faster inference
-                # Requires a C compiler (gcc) for Triton JIT compilation
-                try:
-                    if hasattr(torch, "compile") and hasattr(self.pipe, "transformer"):
-                        if shutil.which("gcc") is None:
-                            logger.warning(
-                                "C compiler (gcc) not found. Skipping torch.compile optimization. "
-                                "Install gcc for Triton JIT compilation support."
-                            )
-                        else:
-                            self.pipe.transformer = torch.compile(
-                                self.pipe.transformer,
-                                mode="reduce-overhead",
-                                fullgraph=False,
-                            )
-                            logger.info("Compiled transformer with torch.compile (reduce-overhead mode)")
-                except Exception as e:
-                    logger.warning(f"Could not compile transformer: {e}")
+            if enable_cache_dit:
+                # Initialize with Cache-DiT acceleration for 1.5-2.2x speedup
+                logger.info("Initializing Omni with Cache-DiT acceleration...")
+                self.omni = Omni(
+                    model=self.model_id,
+                    cache_backend="cache_dit",
+                    cache_config={
+                        "max_warmup_steps": 4,  # Optimized for turbo models
+                        "Fn_compute_blocks": 1,
+                        "residual_diff_threshold": 0.24,
+                    },
+                )
+                logger.info("Cache-DiT acceleration enabled")
+            else:
+                # Basic initialization without Cache-DiT
+                logger.info("Initializing Omni...")
+                self.omni = Omni(model=self.model_id)
 
             self.is_loaded = True
             logger.info(f"Model loaded successfully on {self.device}")
@@ -159,7 +140,7 @@ class ImageGenerator:
         Raises:
             RuntimeError: If model is not loaded or generation fails.
         """
-        if not self.is_loaded or self.pipe is None:
+        if not self.is_loaded or self.omni is None:
             raise RuntimeError(
                 "Model is not loaded. Call load_model() before generating images."
             )
@@ -176,23 +157,24 @@ class ImageGenerator:
 
             # Use inference mode for memory optimization and faster inference
             with torch.inference_mode():
-                for i in range(n):
-                    # Generate the image
-                    result = self.pipe(
-                        prompt=prompt,
-                        width=width,
-                        height=height,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,
-                    )
+                # Use vLLM-Omni's generate() method with num_outputs_per_prompt
+                outputs = self.omni.generate(
+                    prompt=prompt,
+                    width=width,
+                    height=height,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                    num_outputs_per_prompt=n,
+                )
 
-                    # Get the PIL image from the result
-                    image = result.images[0]
+                # Extract images from vLLM-Omni output structure
+                # Output format: outputs[0].request_output[0].images -> List[PIL.Image]
+                generated_images = outputs[0].request_output[0].images
 
+                for i, image in enumerate(generated_images):
                     # Convert to base64
                     b64_image = self._image_to_base64(image)
                     images.append(b64_image)
-
                     logger.info(f"Generated image {i + 1}/{n}")
 
             # Clean up GPU memory after generation
@@ -244,9 +226,9 @@ class ImageGenerator:
 
         Call this when shutting down the service to properly release resources.
         """
-        if self.pipe is not None:
-            del self.pipe
-            self.pipe = None
+        if self.omni is not None:
+            del self.omni
+            self.omni = None
             self.is_loaded = False
             # Use empty_cache when fully unloading model to reclaim GPU memory
             if self.device == "cuda":
@@ -264,7 +246,7 @@ class ImageGenerator:
         Raises:
             RuntimeError: If model is not loaded.
         """
-        if not self.is_loaded or self.pipe is None:
+        if not self.is_loaded or self.omni is None:
             raise RuntimeError(
                 "Model is not loaded. Call load_model() before warmup."
             )
@@ -274,12 +256,14 @@ class ImageGenerator:
         try:
             # Use a small image size for faster warmup
             with torch.inference_mode():
-                _ = self.pipe(
+                # Use vLLM-Omni's generate() method for warmup
+                _ = self.omni.generate(
                     prompt="warmup",
                     width=512,
                     height=512,
                     num_inference_steps=1,
                     guidance_scale=0.0,
+                    num_outputs_per_prompt=1,
                 )
             logger.info("Warmup completed successfully")
         except Exception as e:

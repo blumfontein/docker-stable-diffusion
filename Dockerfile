@@ -11,11 +11,14 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Install Python 3.10 and essential dependencies
+# Note: git is required for installing vllm-omni from git source
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-venv \
     python3-pip \
     gcc \
+    g++ \
+    git \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
@@ -39,6 +42,7 @@ COPY requirements.txt .
 
 # Upgrade pip and install Python dependencies
 # Use PyTorch CUDA 12.6 wheels from the official PyTorch index
+# Note: This installs vllm==0.12.0 and vllm-omni from git for optimized inference
 RUN pip3 install --no-cache-dir --upgrade pip \
     && pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu126 -r requirements.txt
 
