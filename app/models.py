@@ -7,7 +7,7 @@ This module defines request and response models that follow the OpenAI
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ResponseFormat(str, Enum):
@@ -63,8 +63,8 @@ class ImageGenerationRequest(BaseModel):
             raise ValueError("Prompt cannot be empty or whitespace only")
         return v.strip()
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "prompt": "A beautiful sunset over mountains",
@@ -74,7 +74,7 @@ class ImageGenerationRequest(BaseModel):
                 }
             ]
         }
-    }
+    )
 
 
 class ImageData(BaseModel):
@@ -108,8 +108,8 @@ class ImageGenerationResponse(BaseModel):
         description="List of generated image data",
     )
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "created": 1234567890,
@@ -121,7 +121,7 @@ class ImageGenerationResponse(BaseModel):
                 }
             ]
         }
-    }
+    )
 
 
 class ErrorResponse(BaseModel):
