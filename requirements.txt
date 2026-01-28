@@ -6,18 +6,18 @@ torch==2.9.0
 
 # Transitive Dependencies (pinned for version control)
 # safetensors is required by vLLM for efficient model weight loading
-safetensors>=0.4.0
+safetensors==0.4.5
 
 # vLLM and vLLM-Omni for optimized inference
 vllm==0.12.0
 git+https://github.com/vllm-project/vllm-omni.git
 
 # Web Framework
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
 
 # Image Processing
-pillow>=10.0.0
+pillow==11.1.0
 
 # huggingface-hub is required by vLLM for downloading models from Hugging Face
-huggingface-hub>=0.23.0
+huggingface-hub==0.27.1

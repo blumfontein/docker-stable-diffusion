@@ -68,6 +68,12 @@ ENV API_KEY=""
 # Hugging Face token for model access (alternative: HF_TOKEN)
 ENV HUGGING_FACE_HUB_TOKEN=""
 
+# Generation timeout in seconds (how long to wait for image generation)
+ENV GENERATION_TIMEOUT=120
+
+# Maximum number of worker threads for concurrent processing
+ENV MAX_WORKERS=1
+
 # Expose the API port
 EXPOSE 8000
 

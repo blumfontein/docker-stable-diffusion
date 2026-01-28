@@ -7,7 +7,7 @@ This module defines request and response models that follow the OpenAI
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ResponseFormat(str, Enum):
@@ -63,8 +63,8 @@ class ImageGenerationRequest(BaseModel):
             raise ValueError("Prompt cannot be empty or whitespace only")
         return v.strip()
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "prompt": "A beautiful sunset over mountains",
@@ -74,13 +74,14 @@ class ImageGenerationRequest(BaseModel):
                 }
             ]
         }
-    }
+    )
 
 
 class ImageData(BaseModel):
     """Individual image data in the response.
 
     Contains either base64-encoded image data or a URL.
+    Exactly one of b64_json or url must be provided.
     """
 
     b64_json: Optional[str] = Field(
@@ -91,6 +92,15 @@ class ImageData(BaseModel):
         default=None,
         description="URL to the generated image",
     )
+
+    @model_validator(mode="after")
+    def check_one_field_required(self) -> "ImageData":
+        """Validate that exactly one of b64_json or url is provided."""
+        if not self.b64_json and not self.url:
+            raise ValueError("Either b64_json or url must be provided")
+        if self.b64_json and self.url:
+            raise ValueError("Only one of b64_json or url should be provided")
+        return self
 
 
 class ImageGenerationResponse(BaseModel):
@@ -108,8 +118,8 @@ class ImageGenerationResponse(BaseModel):
         description="List of generated image data",
     )
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "created": 1234567890,
@@ -121,7 +131,7 @@ class ImageGenerationResponse(BaseModel):
                 }
             ]
         }
-    }
+    )
 
 
 class ErrorResponse(BaseModel):
@@ -154,4 +164,8 @@ class HealthResponse(BaseModel):
     model_loaded: bool = Field(
         ...,
         description="Whether the ML model is loaded and ready",
+    )
+    ready: bool = Field(
+        ...,
+        description="Whether the service is ready to accept requests",
     )

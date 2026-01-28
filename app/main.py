@@ -45,8 +45,13 @@ executor: ThreadPoolExecutor | None = None
 # Async lock for backpressure - prevents concurrent generation requests
 generation_lock: asyncio.Lock | None = None
 
-# Generation timeout in seconds
-GENERATION_TIMEOUT = 120
+# Generation timeout in seconds (configurable via environment variable)
+GENERATION_TIMEOUT = int(os.getenv("GENERATION_TIMEOUT", "120"))
+logger.info(f"GENERATION_TIMEOUT configured to {GENERATION_TIMEOUT} seconds")
+
+# Max workers for thread pool executor (configurable via environment variable)
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "1"))
+logger.info(f"MAX_WORKERS configured to {MAX_WORKERS}")
 
 # API Key configuration
 API_KEY: Optional[str] = os.getenv("API_KEY")
@@ -148,9 +153,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Generation lock initialized")
 
     # Initialize thread pool executor for async generation
-    # Use max_workers=1 to prevent concurrent GPU access issues
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sd_generator")
-    logger.info("Thread pool executor initialized")
+    # Default max_workers=1 to prevent concurrent GPU access issues
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="sd_generator")
+    logger.info(f"Thread pool executor initialized with {MAX_WORKERS} workers")
 
     # Initialize and load the model
     generator = ImageGenerator()
@@ -198,9 +203,11 @@ async def health_check() -> HealthResponse:
     Returns the service health status and whether the model is loaded.
     """
     model_loaded = generator is not None and generator.is_loaded
+    ready = model_loaded and executor is not None and generation_lock is not None
     return HealthResponse(
         status="healthy" if model_loaded else "degraded",
         model_loaded=model_loaded,
+        ready=ready,
     )
 
 
