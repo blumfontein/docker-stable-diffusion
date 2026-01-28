@@ -1,7 +1,7 @@
 # Stable Diffusion 3.5 Large Turbo API Docker Image
 # Base image with CUDA 12.1 runtime for GPU acceleration
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
