@@ -13,7 +13,7 @@ vllm==0.12.0
 git+https://github.com/vllm-project/vllm-omni.git@v0.12.0rc1
 
 # Web Framework
-fastapi==0.115.6
+fastapi>=0.120.0
 uvicorn[standard]==0.34.0
 
 # Image Processing
