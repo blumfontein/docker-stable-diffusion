@@ -152,6 +152,11 @@ class ImageGenerator:
                 "Model is not loaded. Call load_model() before generating images."
             )
 
+        # Perform lazy warmup on first generation
+        if not self.is_warmed_up:
+            self._warmup_internal()
+            self.is_warmed_up = True
+
         width, height = self._parse_size(size)
 
         logger.info(
