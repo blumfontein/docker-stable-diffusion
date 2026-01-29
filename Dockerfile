@@ -40,11 +40,19 @@ WORKDIR /app
 # Copy requirements first for better layer caching
 COPY requirements.txt .
 
+# Copy patches directory for post-install fixes
+COPY patches/ ./patches/
+
 # Upgrade pip and install Python dependencies
 # Use PyTorch CUDA 12.6 wheels from the official PyTorch index
 # Note: This installs vllm==0.12.0 and vllm-omni from git for optimized inference
 RUN pip3 install --no-cache-dir --upgrade pip \
     && pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu126 -r requirements.txt
+
+# Apply vllm-omni patch to fix SD3.5 Large Turbo dual_attention_layers AttributeError
+# This patch adds a getattr fallback for the missing dual_attention_layers attribute
+# in sd3_transformer.py which causes initialization failure with SD3.5 Large Turbo
+RUN python3 patches/fix_dual_attention.py
 
 # Copy application code
 COPY app/ ./app/
