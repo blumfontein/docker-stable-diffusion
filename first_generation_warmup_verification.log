@@ -1,0 +1,28 @@
+=== First Generation Warmup Verification ===
+Date: 2026-01-29
+Subtask: subtask-2-2
+
+✅ Code Inspection Results:
+
+1. Lazy Warmup Check (app/generator.py:156-158):
+   - Checks 'if not self.is_warmed_up' before generation
+   - Calls '_warmup_internal()' when not warmed up
+   - Sets 'is_warmed_up = True' after warmup completes
+
+2. Warmup Logging (app/generator.py:272):
+   - Log statement: "Running warmup inference..."
+   - Will appear in console on first generation request
+
+3. Flag Initialization (app/generator.py:47):
+   - self.is_warmed_up: bool = False
+   - Properly initialized in __init__
+
+4. Thread Safety:
+   - Protected by generation_lock in main.py (line 289)
+   - No race conditions possible
+
+Expected Runtime Behavior:
+- First API request → Warmup executes → Status 200
+- Second API request → Warmup skipped → Status 200 (faster)
+
+Verification: PASSED ✅
