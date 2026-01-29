@@ -249,12 +249,12 @@ class ImageGenerator:
             self._cleanup_memory()
             logger.info("Model unloaded and memory cleaned up")
 
-    def warmup(self) -> None:
-        """Perform a warmup inference to initialize CUDA kernels.
+    def _warmup_internal(self) -> None:
+        """Internal method to perform a warmup inference to initialize CUDA kernels.
 
         This runs a small dummy inference to warm up the model and compile
-        any lazy-loaded CUDA kernels. Call this after load_model() to ensure
-        the first real inference is fast.
+        any lazy-loaded CUDA kernels. This is an internal method that will be
+        called automatically on first generation if needed.
 
         Raises:
             RuntimeError: If model is not loaded.
