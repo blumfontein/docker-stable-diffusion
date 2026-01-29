@@ -161,10 +161,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     generator = ImageGenerator()
     try:
         generator.load_model()
-        logger.info("Model loaded successfully")
-        # Warmup the model to prepare for inference
-        generator.warmup()
-        logger.info("Model warmed up, API ready to serve requests")
+        logger.info("Model loaded successfully, API ready to serve requests")
     except Exception as e:
         logger.error(f"Failed to load model during startup: {e}")
         # Continue running but model will not be available
