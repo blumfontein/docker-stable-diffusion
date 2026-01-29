@@ -44,6 +44,7 @@ class ImageGenerator:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.omni: Optional["Omni"] = None
         self.is_loaded: bool = False
+        self.is_warmed_up: bool = False
 
         logger.info(f"ImageGenerator initialized with model_id={self.model_id}")
         logger.info(f"Using device: {self.device}")
