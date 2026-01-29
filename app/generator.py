@@ -46,7 +46,6 @@ class ImageGenerator:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.omni: Optional["Omni"] = None
         self.is_loaded: bool = False
-        self.is_warmed_up: bool = False
         self._generation_lock = threading.Lock()
 
         logger.info(f"ImageGenerator initialized with model_id={self.model_id}")
@@ -155,11 +154,6 @@ class ImageGenerator:
                 "Model is not loaded. Call load_model() before generating images."
             )
 
-        # Perform lazy warmup on first generation
-        if not self.is_warmed_up:
-            self._warmup_internal()
-            self.is_warmed_up = True
-
         width, height = self._parse_size(size)
 
         logger.info(
@@ -257,38 +251,3 @@ class ImageGenerator:
             self._cleanup_memory()
             logger.info("Model unloaded and memory cleaned up")
 
-    def _warmup_internal(self) -> None:
-        """Internal method to perform a warmup inference to initialize CUDA kernels.
-
-        This runs a small dummy inference to warm up the model and compile
-        any lazy-loaded CUDA kernels. This is an internal method that will be
-        called automatically on first generation if needed.
-
-        Raises:
-            RuntimeError: If model is not loaded.
-        """
-        if not self.is_loaded or self.omni is None:
-            raise RuntimeError(
-                "Model is not loaded. Call load_model() before warmup."
-            )
-
-        logger.info("Running warmup inference...")
-
-        try:
-            # Use a small image size for faster warmup
-            with torch.inference_mode():
-                # Thread-safe warmup - protect omni.generate() with lock
-                with self._generation_lock:
-                    # Use vLLM-Omni's generate() method for warmup
-                    _ = self.omni.generate(
-                        prompt="warmup",
-                        width=512,
-                        height=512,
-                        num_inference_steps=1,
-                        guidance_scale=0.0,
-                        num_outputs_per_prompt=1,
-                    )
-            logger.info("Warmup completed successfully")
-        except Exception as e:
-            logger.warning(f"Warmup inference failed: {e}")
-            # Don't raise - warmup failure shouldn't prevent service from starting
