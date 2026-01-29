@@ -9,6 +9,7 @@ import gc
 import io
 import logging
 import os
+import threading
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 if TYPE_CHECKING:
@@ -20,7 +21,7 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # Threshold for batch cleanup - use empty_cache for batches larger than this
-BATCH_CLEANUP_THRESHOLD = 1
+BATCH_CLEANUP_THRESHOLD = 999
 
 
 class ImageGenerator:
@@ -34,6 +35,7 @@ class ImageGenerator:
         device: PyTorch device to run inference on (cuda/cpu).
         omni: The loaded vLLM-Omni Omni instance.
         is_loaded: Whether the model has been successfully loaded.
+        _generation_lock: Threading lock to protect omni.generate() calls.
     """
 
     def __init__(self) -> None:
@@ -45,6 +47,7 @@ class ImageGenerator:
         self.omni: Optional["Omni"] = None
         self.is_loaded: bool = False
         self.is_warmed_up: bool = False
+        self._generation_lock = threading.Lock()
 
         logger.info(f"ImageGenerator initialized with model_id={self.model_id}")
         logger.info(f"Using device: {self.device}")
@@ -169,15 +172,17 @@ class ImageGenerator:
 
             # Use inference mode for memory optimization and faster inference
             with torch.inference_mode():
-                # Use vLLM-Omni's generate() method with num_outputs_per_prompt
-                outputs = self.omni.generate(
-                    prompt=prompt,
-                    width=width,
-                    height=height,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                    num_outputs_per_prompt=n,
-                )
+                # Thread-safe generation - protect omni.generate() with lock
+                with self._generation_lock:
+                    # Use vLLM-Omni's generate() method with num_outputs_per_prompt
+                    outputs = self.omni.generate(
+                        prompt=prompt,
+                        width=width,
+                        height=height,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale,
+                        num_outputs_per_prompt=n,
+                    )
 
                 # Extract images from vLLM-Omni output structure
                 # Output format: outputs[0].request_output[0].images -> List[PIL.Image]
@@ -196,9 +201,7 @@ class ImageGenerator:
 
         except torch.cuda.OutOfMemoryError as e:
             logger.error(f"CUDA out of memory during generation: {e}")
-            # Use aggressive cleanup for OOM recovery - empty_cache is warranted here
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
+            # Cleanup memory on OOM
             self._cleanup_memory()
             raise RuntimeError(
                 "GPU out of memory. Try reducing image size or number of images."
@@ -274,15 +277,17 @@ class ImageGenerator:
         try:
             # Use a small image size for faster warmup
             with torch.inference_mode():
-                # Use vLLM-Omni's generate() method for warmup
-                _ = self.omni.generate(
-                    prompt="warmup",
-                    width=512,
-                    height=512,
-                    num_inference_steps=1,
-                    guidance_scale=0.0,
-                    num_outputs_per_prompt=1,
-                )
+                # Thread-safe warmup - protect omni.generate() with lock
+                with self._generation_lock:
+                    # Use vLLM-Omni's generate() method for warmup
+                    _ = self.omni.generate(
+                        prompt="warmup",
+                        width=512,
+                        height=512,
+                        num_inference_steps=1,
+                        guidance_scale=0.0,
+                        num_outputs_per_prompt=1,
+                    )
             logger.info("Warmup completed successfully")
         except Exception as e:
             logger.warning(f"Warmup inference failed: {e}")
