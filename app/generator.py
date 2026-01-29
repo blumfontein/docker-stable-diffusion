@@ -20,7 +20,7 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # Threshold for batch cleanup - use empty_cache for batches larger than this
-BATCH_CLEANUP_THRESHOLD = 1
+BATCH_CLEANUP_THRESHOLD = 999
 
 
 class ImageGenerator:
@@ -196,9 +196,7 @@ class ImageGenerator:
 
         except torch.cuda.OutOfMemoryError as e:
             logger.error(f"CUDA out of memory during generation: {e}")
-            # Use aggressive cleanup for OOM recovery - empty_cache is warranted here
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
+            # Cleanup memory on OOM
             self._cleanup_memory()
             raise RuntimeError(
                 "GPU out of memory. Try reducing image size or number of images."
