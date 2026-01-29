@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/ilyasmak/AutoClaude/text_to_image/.auto-claude/worktrees/tasks/019-implement-lazy-warmup-to-fix-generation-timeout/./app/main.py", line 19, in <module>
+    from fastapi import Depends, FastAPI, Header, HTTPException
+ModuleNotFoundError: No module named 'fastapi'
