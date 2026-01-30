@@ -131,7 +131,9 @@ docker stop sd-api
 | `MODEL_ID` | No | `stabilityai/stable-diffusion-3.5-large-turbo` | Hugging Face model identifier |
 | `HOST` | No | `0.0.0.0` | Server bind address |
 | `PORT` | No | `8000` | Server port |
-| `ENABLE_CACHE_DIT` | No | `false` | Enable DIT caching optimization for improved performance |
+| `ENABLE_CACHE_DIT` | No | `true` | Enable DIT caching optimization for improved performance |
+| `GENERATION_TIMEOUT` | No | `120` | Image generation timeout in seconds |
+| `MAX_WORKERS` | No | `1` | Number of concurrent generation workers |
 
 ## Authentication
 
