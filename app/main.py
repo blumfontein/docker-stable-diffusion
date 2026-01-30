@@ -430,7 +430,7 @@ async def generate_images(
         raise HTTPException(
             status_code=429,
             detail={
-                "error": "Server is busy processing requests. Please try again later.",
+                "error": "Request queue is full. Please try again later.",
                 "code": "rate_limit_exceeded",
                 "param": None,
             },
