@@ -119,6 +119,19 @@ docker run --gpus all -p 8000:8000 \
   sd-api
 ```
 
+### Run with Custom GPU Memory Utilization
+
+Adjust GPU memory allocation (useful for managing memory with other GPU applications):
+
+```bash
+docker run --gpus all -p 8000:8000 \
+  -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+  -e API_KEY=your_api_key_here \
+  -e GPU_MEMORY_UTILIZATION=0.7 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  sd-api
+```
+
 ### Run in Detached Mode
 
 ```bash
@@ -145,6 +158,7 @@ docker stop sd-api
 | `MODEL_ID` | No | `stabilityai/stable-diffusion-3.5-large-turbo` | Hugging Face model identifier |
 | `HOST` | No | `0.0.0.0` | Server bind address |
 | `PORT` | No | `8000` | Server port |
+| `GPU_MEMORY_UTILIZATION` | No | `0.9` | GPU memory utilization (0.0 to 1.0) - percentage of available GPU memory to allocate for the model |
 | `ENABLE_CACHE_DIT` | No | `true` | Enable DIT caching optimization for improved performance |
 | `GENERATION_TIMEOUT` | No | `120` | Image generation timeout in seconds |
 | `MAX_WORKERS` | No | `1` | Number of concurrent generation workers |
@@ -410,6 +424,13 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 **Symptom:** Generation fails with CUDA out of memory errors.
 
 **Solutions:**
+- Reduce GPU memory utilization: Set `GPU_MEMORY_UTILIZATION=0.7` or lower (default is 0.9)
+  ```bash
+  docker run --gpus all -p 8000:8000 \
+    -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+    -e GPU_MEMORY_UTILIZATION=0.7 \
+    sd-api
+  ```
 - Reduce image size to `512x512` or `768x768`
 - Generate fewer images at once (`n=1`)
 - Use a GPU with more VRAM (16GB+ recommended)
