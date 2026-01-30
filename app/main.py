@@ -343,9 +343,15 @@ async def health_check() -> HealthResponse:
     """Health check endpoint.
 
     Returns the service health status and whether the model is loaded.
+    Verifies that the request queue and queue worker are properly initialized.
     """
     model_loaded = generator is not None and generator.is_loaded
-    ready = model_loaded and executor is not None and request_queue is not None
+    queue_ready = (
+        request_queue is not None
+        and queue_worker_task is not None
+        and not queue_worker_task.done()
+    )
+    ready = model_loaded and executor is not None and queue_ready
     return HealthResponse(
         status="healthy" if model_loaded else "degraded",
         model_loaded=model_loaded,
