@@ -59,6 +59,9 @@ executor: ThreadPoolExecutor | None = None
 # Request queue for GPU image generation
 request_queue: asyncio.Queue[QueuedRequest] | None = None
 
+# Background task for queue worker
+queue_worker_task: asyncio.Task | None = None
+
 # Generation timeout in seconds (configurable via environment variable)
 GENERATION_TIMEOUT = int(os.getenv("GENERATION_TIMEOUT", "120"))
 logger.info(f"GENERATION_TIMEOUT configured to {GENERATION_TIMEOUT} seconds")
@@ -271,9 +274,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for model loading and cleanup.
 
     Loads the Stable Diffusion model at startup and unloads it at shutdown.
-    Also initializes and cleans up the thread pool executor.
+    Also initializes and cleans up the thread pool executor and queue worker.
     """
-    global generator, executor, request_queue
+    global generator, executor, request_queue, queue_worker_task
 
     logger.info("Starting up Stable Diffusion API server...")
 
@@ -285,6 +288,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Default max_workers=1 to prevent concurrent GPU access issues
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="sd_generator")
     logger.info(f"Thread pool executor initialized with {MAX_WORKERS} workers")
+
+    # Start queue worker as background task
+    queue_worker_task = asyncio.create_task(queue_worker())
+    logger.info("Queue worker started as background task")
 
     # Initialize and load the model
     generator = ImageGenerator()
@@ -300,6 +307,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Cleanup on shutdown
     logger.info("Shutting down API server...")
+
+    # Cancel and cleanup queue worker task
+    if queue_worker_task is not None:
+        queue_worker_task.cancel()
+        try:
+            await queue_worker_task
+        except asyncio.CancelledError:
+            logger.info("Queue worker task cancelled successfully")
+
     if generator is not None:
         generator.unload_model()
     if executor is not None:
