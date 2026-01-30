@@ -87,6 +87,10 @@ class ImageGenerator:
         logger.info("This may take several minutes on first run...")
 
         try:
+            # Read GPU memory utilization from environment variable
+            gpu_memory_utilization = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.9"))
+            logger.info(f"GPU memory utilization: {gpu_memory_utilization}")
+
             # Check if Cache-DiT should be enabled via environment variable
             enable_cache_dit = os.getenv("ENABLE_CACHE_DIT", "true").lower() == "true"
 
@@ -95,6 +99,7 @@ class ImageGenerator:
                 logger.info("Initializing Omni with Cache-DiT acceleration...")
                 self.omni = Omni(
                     model=self.model_id,
+                    gpu_memory_utilization=gpu_memory_utilization,
                     cache_backend="cache_dit",
                     cache_config={
                         "max_warmup_steps": 4,  # Optimized for turbo models
@@ -106,7 +111,10 @@ class ImageGenerator:
             else:
                 # Basic initialization without Cache-DiT
                 logger.info("Initializing Omni...")
-                self.omni = Omni(model=self.model_id)
+                self.omni = Omni(
+                    model=self.model_id,
+                    gpu_memory_utilization=gpu_memory_utilization,
+                )
 
             self.is_loaded = True
             logger.info(f"Model loaded successfully on {self.device}")
