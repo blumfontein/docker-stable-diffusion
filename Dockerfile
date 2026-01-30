@@ -15,6 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-venv \
+    python3.10-dev \
     python3-pip \
     gcc \
     g++ \
