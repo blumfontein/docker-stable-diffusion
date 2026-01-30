@@ -83,6 +83,9 @@ ENV GENERATION_TIMEOUT=120
 # Maximum number of worker threads for concurrent processing
 ENV MAX_WORKERS=1
 
+# GPU memory utilization (0.0 to 1.0, default 90% of available GPU memory)
+ENV GPU_MEMORY_UTILIZATION=0.9
+
 # Expose the API port
 EXPOSE 8000
 
