@@ -47,11 +47,20 @@ class ImageGenerationRequest(BaseModel):
     @field_validator("size")
     @classmethod
     def validate_size(cls, v: str) -> str:
-        """Validate image size format."""
-        valid_sizes = {"1024x1024", "512x512", "768x768"}
-        if v not in valid_sizes:
+        """Validate image size format.
+
+        Accepts any size in WxH format where both dimensions are ≤ 1024 pixels.
+        """
+        parts = v.split("x")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid size format '{v}'. Expected 'WxH' format.")
+        try:
+            width, height = int(parts[0]), int(parts[1])
+        except ValueError:
+            raise ValueError(f"Invalid size format '{v}'. Expected 'WxH' format.")
+        if width > 1024 or height > 1024:
             raise ValueError(
-                f"Invalid size '{v}'. Must be one of: {', '.join(sorted(valid_sizes))}"
+                f"Invalid size '{v}'. Both dimensions must be ≤ 1024 pixels."
             )
         return v
 
