@@ -408,9 +408,8 @@ async def generate_images(
         raise HTTPException(
             status_code=400,
             detail={
-                "error": f"Requested model '{request.model}' does not match "
-                f"loaded model '{generator.model_id}'.",
-                "code": "model_mismatch",
+                "error": f"Invalid model '{request.model}'. Expected '{generator.model_id}'.",
+                "code": "invalid_model",
                 "param": "model",
             },
         )
