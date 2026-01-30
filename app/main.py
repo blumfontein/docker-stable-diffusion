@@ -394,8 +394,8 @@ async def generate_images(
             },
         )
 
-    # Check if executor is available
-    if executor is None:
+    # Check if request queue is available
+    if request_queue is None:
         raise HTTPException(
             status_code=503,
             detail={
@@ -405,58 +405,35 @@ async def generate_images(
             },
         )
 
-    # Check if generation lock is available
-    if generation_lock is None:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "Service is not ready. Please wait for startup to complete.",
-                "code": "service_not_ready",
-                "param": None,
-            },
-        )
+    # Create a future to receive the result from the queue worker
+    loop = asyncio.get_running_loop()
+    result_future = loop.create_future()
 
-    # Backpressure: return 429 if another request is already being processed
-    if generation_lock.locked():
+    # Create queued request
+    queued_request = QueuedRequest(
+        request=request,
+        future=result_future,
+    )
+
+    # Try to add request to queue (non-blocking)
+    # Backpressure: return 429 if queue is full
+    try:
+        request_queue.put_nowait(queued_request)
+        logger.info(f"Request queued (queue depth: {request_queue.qsize()})")
+    except asyncio.QueueFull:
         raise HTTPException(
             status_code=429,
             detail={
-                "error": "Server is busy processing another request. Please try again later.",
+                "error": "Server is busy processing requests. Please try again later.",
                 "code": "rate_limit_exceeded",
                 "param": None,
             },
         )
 
+    # Wait for the queue worker to process the request and set the result
     try:
-        async with generation_lock:
-            # Run blocking generation in thread pool executor to avoid blocking event loop
-            loop = asyncio.get_running_loop()
-            generate_fn = partial(
-                generator.generate_image,
-                prompt=request.prompt,
-                size=request.size,
-                n=request.n,
-            )
-            # Wrap in wait_for with timeout to prevent hanging requests
-            images_b64 = await asyncio.wait_for(
-                loop.run_in_executor(executor, generate_fn),
-                timeout=GENERATION_TIMEOUT,
-            )
-
-            # Build response based on requested format
-            image_data_list = []
-            for b64_image in images_b64:
-                if request.response_format == ResponseFormat.B64_JSON:
-                    image_data_list.append(ImageData(b64_json=b64_image))
-                else:
-                    # URL format not supported for local generation
-                    # Return b64_json anyway as fallback
-                    image_data_list.append(ImageData(b64_json=b64_image))
-
-            return ImageGenerationResponse(
-                created=int(time.time()),
-                data=image_data_list,
-            )
+        response = await result_future
+        return response
 
     except asyncio.TimeoutError:
         logger.error(f"Generation timed out after {GENERATION_TIMEOUT} seconds")
