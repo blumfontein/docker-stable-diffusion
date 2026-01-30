@@ -151,6 +151,121 @@ async def verify_api_key(authorization: Optional[str] = Header(None)) -> None:
         )
 
 
+async def queue_worker() -> None:
+    """Background worker to process queued image generation requests.
+
+    This coroutine runs continuously, pulling requests from the request_queue
+    and processing them sequentially. It uses the thread pool executor to run
+    the blocking generation calls without blocking the event loop.
+
+    The worker processes requests one at a time to ensure sequential GPU access,
+    preventing concurrent generation issues. Results or exceptions are set on
+    the Future object associated with each request.
+
+    This function is designed to run as a background task started during application
+    startup via asyncio.create_task().
+    """
+    logger.info("Queue worker started")
+
+    while True:
+        queued_request: Optional[QueuedRequest] = None
+        try:
+            # Block until a request is available in the queue
+            queued_request = await request_queue.get()
+            queue_depth = request_queue.qsize()
+            logger.info(
+                f"Processing request from queue (remaining in queue: {queue_depth})"
+            )
+
+            # Extract request data
+            request = queued_request.request
+            future = queued_request.future
+
+            # Check if generator is available
+            if generator is None or not generator.is_loaded:
+                error_msg = "Model is not loaded"
+                logger.error(f"Queue worker error: {error_msg}")
+                future.set_exception(
+                    RuntimeError(error_msg)
+                )
+                continue
+
+            # Check if executor is available
+            if executor is None:
+                error_msg = "Executor is not available"
+                logger.error(f"Queue worker error: {error_msg}")
+                future.set_exception(
+                    RuntimeError(error_msg)
+                )
+                continue
+
+            try:
+                # Run blocking generation in thread pool executor
+                loop = asyncio.get_running_loop()
+                generate_fn = partial(
+                    generator.generate_image,
+                    prompt=request.prompt,
+                    size=request.size,
+                    n=request.n,
+                )
+
+                # Execute generation with timeout
+                images_b64 = await asyncio.wait_for(
+                    loop.run_in_executor(executor, generate_fn),
+                    timeout=GENERATION_TIMEOUT,
+                )
+
+                # Build response based on requested format
+                image_data_list = []
+                for b64_image in images_b64:
+                    if request.response_format == ResponseFormat.B64_JSON:
+                        image_data_list.append(ImageData(b64_json=b64_image))
+                    else:
+                        # URL format not supported for local generation
+                        # Return b64_json anyway as fallback
+                        image_data_list.append(ImageData(b64_json=b64_image))
+
+                # Create successful response
+                response = ImageGenerationResponse(
+                    created=int(time.time()),
+                    data=image_data_list,
+                )
+
+                # Set result on future
+                future.set_result(response)
+                logger.info("Request processed successfully")
+
+            except asyncio.TimeoutError:
+                error_msg = f"Generation timed out after {GENERATION_TIMEOUT} seconds"
+                logger.error(f"Queue worker: {error_msg}")
+                future.set_exception(
+                    asyncio.TimeoutError(error_msg)
+                )
+
+            except RuntimeError as e:
+                logger.error(f"Queue worker runtime error: {e}")
+                future.set_exception(e)
+
+            except Exception as e:
+                logger.error(f"Queue worker unexpected error: {e}")
+                future.set_exception(e)
+
+        except Exception as e:
+            # Catch any unexpected errors in the worker loop itself
+            logger.error(f"Queue worker loop error: {e}")
+            # If we have a queued_request, set exception on its future
+            if queued_request is not None and queued_request.future is not None:
+                try:
+                    queued_request.future.set_exception(e)
+                except Exception as future_error:
+                    logger.error(f"Failed to set exception on future: {future_error}")
+
+        finally:
+            # Always mark task as done
+            if queued_request is not None:
+                request_queue.task_done()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for model loading and cleanup.
