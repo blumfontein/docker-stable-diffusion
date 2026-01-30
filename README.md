@@ -5,7 +5,7 @@ A Docker-containerized REST API for text-to-image generation using Stable Diffus
 ## Features
 
 - **OpenAI-Compatible API**: Drop-in replacement for OpenAI's image generation API
-- **GPU Accelerated**: Optimized for NVIDIA GPUs with CUDA 12.1
+- **GPU Accelerated**: Optimized for NVIDIA GPUs with CUDA 12.6
 - **Configurable**: Model ID and server settings via environment variables
 - **Docker Ready**: Production-ready containerization with health checks
 - **Model Caching**: Volume mount support for persistent model storage
@@ -21,7 +21,7 @@ Before running this API, ensure you have:
 
    # Verify NVIDIA Container Toolkit
    nvidia-smi
-   docker run --rm --gpus all nvidia/cuda:12.1-base-ubuntu22.04 nvidia-smi
+   docker run --rm --gpus all nvidia/cuda:12.6.0-runtime-ubuntu22.04 nvidia-smi
    ```
 
 2. **NVIDIA GPU** with CUDA support (recommended: 16GB+ VRAM for SD 3.5 Large Turbo)
@@ -50,6 +50,20 @@ curl -X POST http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{"prompt": "A beautiful sunset over mountains", "n": 1, "size": "1024x1024"}'
 ```
+
+## Pre-built Docker Image
+
+A pre-built Docker image is available on Docker Hub:
+
+```bash
+docker pull blumfontein/docker-stable-diffusion
+docker run --gpus all -p 8000:8000 \
+  -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+  -e API_KEY=your_api_key_here \
+  blumfontein/docker-stable-diffusion
+```
+
+Docker Hub: https://hub.docker.com/r/blumfontein/docker-stable-diffusion
 
 ## Build Instructions
 
@@ -416,7 +430,7 @@ docker logs -f sd-api
 **Solutions:**
 1. Verify NVIDIA Container Toolkit installation:
    ```bash
-   docker run --rm --gpus all nvidia/cuda:12.1-base-ubuntu22.04 nvidia-smi
+   docker run --rm --gpus all nvidia/cuda:12.6.0-runtime-ubuntu22.04 nvidia-smi
    ```
 
 2. Ensure Docker daemon has GPU support:
