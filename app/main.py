@@ -56,8 +56,8 @@ generator: ImageGenerator | None = None
 # Thread pool executor for running blocking generation in background
 executor: ThreadPoolExecutor | None = None
 
-# Async lock for backpressure - prevents concurrent generation requests
-generation_lock: asyncio.Lock | None = None
+# Request queue for GPU image generation
+request_queue: asyncio.Queue[QueuedRequest] | None = None
 
 # Generation timeout in seconds (configurable via environment variable)
 GENERATION_TIMEOUT = int(os.getenv("GENERATION_TIMEOUT", "120"))
@@ -158,13 +158,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Loads the Stable Diffusion model at startup and unloads it at shutdown.
     Also initializes and cleans up the thread pool executor.
     """
-    global generator, executor, generation_lock
+    global generator, executor, request_queue
 
     logger.info("Starting up Stable Diffusion API server...")
 
-    # Initialize async lock for backpressure control
-    generation_lock = asyncio.Lock()
-    logger.info("Generation lock initialized")
+    # Initialize request queue for GPU processing
+    request_queue = asyncio.Queue()
+    logger.info("Request queue initialized")
 
     # Initialize thread pool executor for async generation
     # Default max_workers=1 to prevent concurrent GPU access issues
