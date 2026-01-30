@@ -134,7 +134,19 @@ Verify that the 11th concurrent request is rejected with 429 when queue is full.
    uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
 
-2. **Send 11 concurrent requests quickly:**
+2. **Wait for the model to load** (check logs for "Model loaded successfully")
+
+3. **Run the test script:**
+   ```bash
+   ./test_concurrent_11_requests.sh
+   ```
+
+   Or use the Python async version for more detailed output:
+   ```bash
+   python3 test_concurrent_11_requests.py
+   ```
+
+   Or manually with curl:
    ```bash
    for i in {1..11}; do
      curl -X POST http://localhost:8000/v1/images/generations \
@@ -149,7 +161,7 @@ Verify that the 11th concurrent request is rejected with 429 when queue is full.
 
 - Requests 1-10: Should be queued and eventually return **200 status**
 - Request 11: Should immediately return **429 status**
-- 429 response should contain error message with "queue" or "busy"
+- 429 response should contain error message with "queue is full"
 - Server logs should show "Queue full" message
 
 ### Success Criteria
