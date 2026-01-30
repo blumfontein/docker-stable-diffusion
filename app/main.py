@@ -13,6 +13,7 @@ import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import partial
 from typing import AsyncGenerator, Optional
 
@@ -36,14 +37,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class QueuedRequest:
+    """Request queued for GPU processing.
+
+    Holds the image generation request and a future that will be
+    resolved when processing completes.
+    """
+
+    request: ImageGenerationRequest
+    future: asyncio.Future
+
+
 # Global generator instance
 generator: ImageGenerator | None = None
 
 # Thread pool executor for running blocking generation in background
 executor: ThreadPoolExecutor | None = None
 
-# Async lock for backpressure - prevents concurrent generation requests
-generation_lock: asyncio.Lock | None = None
+# Request queue for GPU image generation
+request_queue: asyncio.Queue[QueuedRequest] | None = None
+
+# Background task for queue worker
+queue_worker_task: asyncio.Task | None = None
 
 # Generation timeout in seconds (configurable via environment variable)
 GENERATION_TIMEOUT = int(os.getenv("GENERATION_TIMEOUT", "120"))
@@ -137,25 +154,144 @@ async def verify_api_key(authorization: Optional[str] = Header(None)) -> None:
         )
 
 
+async def queue_worker() -> None:
+    """Background worker to process queued image generation requests.
+
+    This coroutine runs continuously, pulling requests from the request_queue
+    and processing them sequentially. It uses the thread pool executor to run
+    the blocking generation calls without blocking the event loop.
+
+    The worker processes requests one at a time to ensure sequential GPU access,
+    preventing concurrent generation issues. Results or exceptions are set on
+    the Future object associated with each request.
+
+    This function is designed to run as a background task started during application
+    startup via asyncio.create_task().
+    """
+    logger.info("Queue worker started")
+
+    while True:
+        queued_request: Optional[QueuedRequest] = None
+        try:
+            # Block until a request is available in the queue
+            queued_request = await request_queue.get()
+            queue_depth = request_queue.qsize()
+            logger.info(
+                f"Processing request from queue (remaining in queue: {queue_depth})"
+            )
+
+            # Extract request data
+            request = queued_request.request
+            future = queued_request.future
+
+            # Check if generator is available
+            if generator is None or not generator.is_loaded:
+                error_msg = "Model is not loaded"
+                logger.error(f"Queue worker error: {error_msg}")
+                future.set_exception(
+                    RuntimeError(error_msg)
+                )
+                continue
+
+            # Check if executor is available
+            if executor is None:
+                error_msg = "Executor is not available"
+                logger.error(f"Queue worker error: {error_msg}")
+                future.set_exception(
+                    RuntimeError(error_msg)
+                )
+                continue
+
+            try:
+                # Run blocking generation in thread pool executor
+                loop = asyncio.get_running_loop()
+                generate_fn = partial(
+                    generator.generate_image,
+                    prompt=request.prompt,
+                    size=request.size,
+                    n=request.n,
+                )
+
+                # Execute generation with timeout
+                images_b64 = await asyncio.wait_for(
+                    loop.run_in_executor(executor, generate_fn),
+                    timeout=GENERATION_TIMEOUT,
+                )
+
+                # Build response based on requested format
+                image_data_list = []
+                for b64_image in images_b64:
+                    if request.response_format == ResponseFormat.B64_JSON:
+                        image_data_list.append(ImageData(b64_json=b64_image))
+                    else:
+                        # URL format not supported for local generation
+                        # Return b64_json anyway as fallback
+                        image_data_list.append(ImageData(b64_json=b64_image))
+
+                # Create successful response
+                response = ImageGenerationResponse(
+                    created=int(time.time()),
+                    data=image_data_list,
+                )
+
+                # Set result on future
+                future.set_result(response)
+                logger.info("Request processed successfully")
+
+            except asyncio.TimeoutError:
+                error_msg = f"Generation timed out after {GENERATION_TIMEOUT} seconds"
+                logger.error(f"Queue worker: {error_msg}")
+                future.set_exception(
+                    asyncio.TimeoutError(error_msg)
+                )
+
+            except RuntimeError as e:
+                logger.error(f"Queue worker runtime error: {e}")
+                future.set_exception(e)
+
+            except Exception as e:
+                logger.error(f"Queue worker unexpected error: {e}")
+                future.set_exception(e)
+
+        except Exception as e:
+            # Catch any unexpected errors in the worker loop itself
+            logger.error(f"Queue worker loop error: {e}")
+            # If we have a queued_request, set exception on its future
+            if queued_request is not None and queued_request.future is not None:
+                try:
+                    queued_request.future.set_exception(e)
+                except Exception as future_error:
+                    logger.error(f"Failed to set exception on future: {future_error}")
+
+        finally:
+            # Always mark task as done
+            if queued_request is not None:
+                request_queue.task_done()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for model loading and cleanup.
 
     Loads the Stable Diffusion model at startup and unloads it at shutdown.
-    Also initializes and cleans up the thread pool executor.
+    Also initializes and cleans up the thread pool executor and queue worker.
     """
-    global generator, executor, generation_lock
+    global generator, executor, request_queue, queue_worker_task
 
     logger.info("Starting up Stable Diffusion API server...")
 
-    # Initialize async lock for backpressure control
-    generation_lock = asyncio.Lock()
-    logger.info("Generation lock initialized")
+    # Initialize request queue for GPU processing
+    request_queue = asyncio.Queue(maxsize=10)
+    logger.info("Request queue initialized with maxsize=10")
 
     # Initialize thread pool executor for async generation
     # Default max_workers=1 to prevent concurrent GPU access issues
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="sd_generator")
     logger.info(f"Thread pool executor initialized with {MAX_WORKERS} workers")
+
+    # Start queue worker as background task
+    queue_worker_task = asyncio.create_task(queue_worker())
+    logger.info("Queue worker started as background task")
 
     # Initialize and load the model
     generator = ImageGenerator()
@@ -171,6 +307,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Cleanup on shutdown
     logger.info("Shutting down API server...")
+
+    # Cancel and cleanup queue worker task
+    if queue_worker_task is not None:
+        queue_worker_task.cancel()
+        try:
+            await queue_worker_task
+        except asyncio.CancelledError:
+            logger.info("Queue worker task cancelled successfully")
+
     if generator is not None:
         generator.unload_model()
     if executor is not None:
@@ -198,9 +343,15 @@ async def health_check() -> HealthResponse:
     """Health check endpoint.
 
     Returns the service health status and whether the model is loaded.
+    Verifies that the request queue and queue worker are properly initialized.
     """
     model_loaded = generator is not None and generator.is_loaded
-    ready = model_loaded and executor is not None and generation_lock is not None
+    queue_ready = (
+        request_queue is not None
+        and queue_worker_task is not None
+        and not queue_worker_task.done()
+    )
+    ready = model_loaded and executor is not None and queue_ready
     return HealthResponse(
         status="healthy" if model_loaded else "degraded",
         model_loaded=model_loaded,
@@ -249,8 +400,8 @@ async def generate_images(
             },
         )
 
-    # Check if executor is available
-    if executor is None:
+    # Check if request queue is available
+    if request_queue is None:
         raise HTTPException(
             status_code=503,
             detail={
@@ -260,58 +411,35 @@ async def generate_images(
             },
         )
 
-    # Check if generation lock is available
-    if generation_lock is None:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "Service is not ready. Please wait for startup to complete.",
-                "code": "service_not_ready",
-                "param": None,
-            },
-        )
+    # Create a future to receive the result from the queue worker
+    loop = asyncio.get_running_loop()
+    result_future = loop.create_future()
 
-    # Backpressure: return 429 if another request is already being processed
-    if generation_lock.locked():
+    # Create queued request
+    queued_request = QueuedRequest(
+        request=request,
+        future=result_future,
+    )
+
+    # Try to add request to queue (non-blocking)
+    # Backpressure: return 429 if queue is full
+    try:
+        request_queue.put_nowait(queued_request)
+        logger.info(f"Request queued (queue depth: {request_queue.qsize()})")
+    except asyncio.QueueFull:
         raise HTTPException(
             status_code=429,
             detail={
-                "error": "Server is busy processing another request. Please try again later.",
+                "error": "Request queue is full. Please try again later.",
                 "code": "rate_limit_exceeded",
                 "param": None,
             },
         )
 
+    # Wait for the queue worker to process the request and set the result
     try:
-        async with generation_lock:
-            # Run blocking generation in thread pool executor to avoid blocking event loop
-            loop = asyncio.get_running_loop()
-            generate_fn = partial(
-                generator.generate_image,
-                prompt=request.prompt,
-                size=request.size,
-                n=request.n,
-            )
-            # Wrap in wait_for with timeout to prevent hanging requests
-            images_b64 = await asyncio.wait_for(
-                loop.run_in_executor(executor, generate_fn),
-                timeout=GENERATION_TIMEOUT,
-            )
-
-            # Build response based on requested format
-            image_data_list = []
-            for b64_image in images_b64:
-                if request.response_format == ResponseFormat.B64_JSON:
-                    image_data_list.append(ImageData(b64_json=b64_image))
-                else:
-                    # URL format not supported for local generation
-                    # Return b64_json anyway as fallback
-                    image_data_list.append(ImageData(b64_json=b64_image))
-
-            return ImageGenerationResponse(
-                created=int(time.time()),
-                data=image_data_list,
-            )
+        response = await result_future
+        return response
 
     except asyncio.TimeoutError:
         logger.error(f"Generation timed out after {GENERATION_TIMEOUT} seconds")
