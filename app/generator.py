@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from vllm_omni.entrypoints.omni import Omni
+    from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 import torch
 from PIL import Image
@@ -47,6 +48,7 @@ class ImageGenerator:
         self.omni: Optional["Omni"] = None
         self.is_loaded: bool = False
         self._generation_lock = threading.Lock()
+        self._OmniDiffusionSamplingParams: Optional[type] = None
 
         logger.info(f"ImageGenerator initialized with model_id={self.model_id}")
         logger.info(f"Using device: {self.device}")
@@ -63,6 +65,10 @@ class ImageGenerator:
         """
         # Import here to avoid loading heavy dependencies until needed
         from vllm_omni.entrypoints.omni import Omni
+        from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+
+        # Store reference to OmniDiffusionSamplingParams for use in generate_image
+        self._OmniDiffusionSamplingParams = OmniDiffusionSamplingParams
 
         token = os.getenv("HUGGING_FACE_HUB_TOKEN") or os.getenv("HF_TOKEN")
         if not token:
@@ -168,15 +174,16 @@ class ImageGenerator:
             with torch.inference_mode():
                 # Thread-safe generation - protect omni.generate() with lock
                 with self._generation_lock:
-                    # Use vLLM-Omni's generate() method with num_outputs_per_prompt
-                    outputs = self.omni.generate(
-                        prompt=prompt,
-                        width=width,
+                    # Use vLLM-Omni's generate() method with OmniDiffusionSamplingParams
+                    # The first argument is the prompt (positional), second is sampling params
+                    sampling_params = self._OmniDiffusionSamplingParams(
                         height=height,
-                        num_inference_steps=num_inference_steps,
+                        width=width,
                         guidance_scale=guidance_scale,
+                        num_inference_steps=num_inference_steps,
                         num_outputs_per_prompt=n,
                     )
+                    outputs = self.omni.generate(prompt, sampling_params)
 
                 # Extract images from vLLM-Omni output structure
                 # Output format: outputs[0].request_output[0].images -> List[PIL.Image]
