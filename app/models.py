@@ -29,6 +29,10 @@ class ImageGenerationRequest(BaseModel):
         max_length=4096,
         description="The text description of the image to generate",
     )
+    model: str = Field(
+        ...,
+        description="The model ID to use for generation",
+    )
     n: int = Field(
         default=1,
         ge=1,
@@ -77,6 +81,7 @@ class ImageGenerationRequest(BaseModel):
             "examples": [
                 {
                     "prompt": "A beautiful sunset over mountains",
+                    "model": "stabilityai/stable-diffusion-3.5-large-turbo",
                     "n": 1,
                     "size": "1024x1024",
                     "response_format": "b64_json",

@@ -400,6 +400,20 @@ async def generate_images(
             },
         )
 
+    # Validate requested model matches loaded model
+    if request.model != generator.model_id:
+        logger.warning(
+            f"Model mismatch: requested '{request.model}', loaded '{generator.model_id}'"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": f"Invalid model '{request.model}'. Expected '{generator.model_id}'.",
+                "code": "invalid_model",
+                "param": "model",
+            },
+        )
+
     # Check if request queue is available
     if request_queue is None:
         raise HTTPException(
