@@ -163,8 +163,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting up Stable Diffusion API server...")
 
     # Initialize request queue for GPU processing
-    request_queue = asyncio.Queue()
-    logger.info("Request queue initialized")
+    request_queue = asyncio.Queue(maxsize=10)
+    logger.info("Request queue initialized with maxsize=10")
 
     # Initialize thread pool executor for async generation
     # Default max_workers=1 to prevent concurrent GPU access issues
@@ -214,7 +214,7 @@ async def health_check() -> HealthResponse:
     Returns the service health status and whether the model is loaded.
     """
     model_loaded = generator is not None and generator.is_loaded
-    ready = model_loaded and executor is not None and generation_lock is not None
+    ready = model_loaded and executor is not None and request_queue is not None
     return HealthResponse(
         status="healthy" if model_loaded else "degraded",
         model_loaded=model_loaded,
