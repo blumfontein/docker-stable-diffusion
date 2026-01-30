@@ -13,6 +13,7 @@ import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import partial
 from typing import AsyncGenerator, Optional
 
@@ -35,6 +36,19 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class QueuedRequest:
+    """Request queued for GPU processing.
+
+    Holds the image generation request and a future that will be
+    resolved when processing completes.
+    """
+
+    request: ImageGenerationRequest
+    future: asyncio.Future
+
 
 # Global generator instance
 generator: ImageGenerator | None = None
