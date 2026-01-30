@@ -85,7 +85,19 @@ Verify that the queue can buffer 5 concurrent requests and process them sequenti
    uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
 
-2. **Send 5 concurrent requests** (use separate terminal windows or background jobs):
+2. **Wait for the model to load** (check logs for "Model loaded successfully")
+
+3. **Run the test script:**
+   ```bash
+   ./test_concurrent_5_requests.sh
+   ```
+
+   Or use the Python async version for more detailed output:
+   ```bash
+   python3 test_concurrent_5_requests.py
+   ```
+
+   Or manually with curl:
    ```bash
    for i in {1..5}; do
      curl -X POST http://localhost:8000/v1/images/generations \
