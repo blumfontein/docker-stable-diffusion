@@ -47,6 +47,18 @@ class ImageGenerationRequest(BaseModel):
         default=ResponseFormat.B64_JSON,
         description="Format of the generated image response",
     )
+    num_inference_steps: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="Number of denoising steps. Default: 4 for turbo models, 30 for others.",
+    )
+    guidance_scale: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=20.0,
+        description="Guidance scale for generation. Default: 0.0 for turbo models, 4.5 for others.",
+    )
 
     @field_validator("size")
     @classmethod
@@ -85,6 +97,8 @@ class ImageGenerationRequest(BaseModel):
                     "n": 1,
                     "size": "1024x1024",
                     "response_format": "b64_json",
+                    "num_inference_steps": 4,
+                    "guidance_scale": 0.0,
                 }
             ]
         }

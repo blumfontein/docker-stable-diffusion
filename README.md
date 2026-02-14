@@ -119,6 +119,23 @@ docker run --gpus all -p 8000:8000 \
   sd-api
 ```
 
+### Run with Non-Turbo Models (e.g., Qwen-Image, FLUX)
+
+Non-turbo models require more inference steps and guidance. The API auto-detects model type, but you can override defaults:
+
+```bash
+docker run --gpus all -p 8000:8000 \
+  -e HUGGING_FACE_HUB_TOKEN=your_token_here \
+  -e API_KEY=your_api_key_here \
+  -e MODEL_ID=Qwen/Qwen-Image-2512 \
+  -e NUM_INFERENCE_STEPS=30 \
+  -e GUIDANCE_SCALE=4.5 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  sd-api
+```
+
+> **Note:** Turbo/Lightning models (detected by name) use `steps=4, guidance=0.0` by default. Other models use `steps=30, guidance=4.5`. You can also override per-request via API parameters.
+
 ### Run with Custom GPU Memory Utilization
 
 Adjust GPU memory allocation (useful for managing memory with other GPU applications):
@@ -162,6 +179,8 @@ docker stop sd-api
 | `ENABLE_CACHE_DIT` | No | `true` | Enable DIT caching optimization for improved performance |
 | `GENERATION_TIMEOUT` | No | `120` | Image generation timeout in seconds |
 | `MAX_WORKERS` | No | `1` | Number of concurrent generation workers |
+| `NUM_INFERENCE_STEPS` | No | Auto | Number of denoising steps. Auto-detected: 4 for turbo models, 30 for others |
+| `GUIDANCE_SCALE` | No | Auto | Guidance scale for generation. Auto-detected: 0.0 for turbo models, 4.5 for others |
 
 ## Authentication
 
@@ -230,6 +249,8 @@ Generate images from a text prompt using Stable Diffusion 3.5.
 | `n` | integer | No | 1 | Number of images to generate (1-4) |
 | `size` | string | No | `1024x1024` | Image dimensions (`512x512`, `768x768`, `1024x1024`) |
 | `response_format` | string | No | `b64_json` | Response format (`b64_json` or `url`) |
+| `num_inference_steps` | integer | No | Auto | Number of denoising steps (1-100). Auto: 4 for turbo, 30 for others |
+| `guidance_scale` | float | No | Auto | Guidance scale (0.0-20.0). Auto: 0.0 for turbo, 4.5 for others |
 
 **Example Request:**
 
