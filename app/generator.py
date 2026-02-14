@@ -10,7 +10,7 @@ import io
 import logging
 import os
 import threading
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from vllm_omni.entrypoints.omni import Omni
@@ -140,13 +140,47 @@ class ImageGenerator:
             # Default to 1024x1024 if parsing fails
             return 1024, 1024
 
+    def _is_turbo_model(self) -> bool:
+        """Check if the loaded model is a turbo/distilled variant.
+
+        Turbo models are distilled and require fewer inference steps
+        and typically work best with guidance_scale=0.
+
+        Returns:
+            True if model appears to be a turbo variant, False otherwise.
+        """
+        model_lower = self.model_id.lower()
+        return "turbo" in model_lower or "lightning" in model_lower
+
+    def _get_default_inference_steps(self) -> int:
+        """Get default inference steps based on model type.
+
+        Returns:
+            Default number of inference steps (4 for turbo, 30 for others).
+        """
+        env_value = os.getenv("NUM_INFERENCE_STEPS")
+        if env_value is not None:
+            return int(env_value)
+        return 4 if self._is_turbo_model() else 30
+
+    def _get_default_guidance_scale(self) -> float:
+        """Get default guidance scale based on model type.
+
+        Returns:
+            Default guidance scale (0.0 for turbo, 4.5 for others).
+        """
+        env_value = os.getenv("GUIDANCE_SCALE")
+        if env_value is not None:
+            return float(env_value)
+        return 0.0 if self._is_turbo_model() else 4.5
+
     def generate_image(
         self,
         prompt: str,
         size: str = "1024x1024",
         n: int = 1,
-        num_inference_steps: int = 4,
-        guidance_scale: float = 0.0,
+        num_inference_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
     ) -> List[str]:
         """Generate images from a text prompt.
 
@@ -154,8 +188,12 @@ class ImageGenerator:
             prompt: Text description of the image to generate.
             size: Image dimensions in "WIDTHxHEIGHT" format.
             n: Number of images to generate (1-4).
-            num_inference_steps: Number of denoising steps (default 4 for turbo).
-            guidance_scale: Guidance scale for generation (default 0.0 for turbo).
+            num_inference_steps: Number of denoising steps. If None, uses smart
+                defaults based on model type (4 for turbo, 30 for others) or
+                NUM_INFERENCE_STEPS environment variable.
+            guidance_scale: Guidance scale for generation. If None, uses smart
+                defaults based on model type (0.0 for turbo, 4.5 for others) or
+                GUIDANCE_SCALE environment variable.
 
         Returns:
             List of base64-encoded PNG image strings.
@@ -163,6 +201,17 @@ class ImageGenerator:
         Raises:
             RuntimeError: If model is not loaded or generation fails.
         """
+        # Apply smart defaults based on model type
+        if num_inference_steps is None:
+            num_inference_steps = self._get_default_inference_steps()
+        if guidance_scale is None:
+            guidance_scale = self._get_default_guidance_scale()
+
+        logger.info(
+            f"Using num_inference_steps={num_inference_steps}, "
+            f"guidance_scale={guidance_scale} "
+            f"(turbo_model={self._is_turbo_model()})"
+        )
         if not self.is_loaded or self.omni is None:
             raise RuntimeError(
                 "Model is not loaded. Call load_model() before generating images."
