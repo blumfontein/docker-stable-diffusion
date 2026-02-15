@@ -97,17 +97,28 @@ class ImageGenerator:
             if enable_cache_dit:
                 # Initialize with Cache-DiT acceleration for 1.5-2.2x speedup
                 logger.info("Initializing Omni with Cache-DiT acceleration...")
-                self.omni = Omni(
-                    model=self.model_id,
-                    gpu_memory_utilization=gpu_memory_utilization,
-                    cache_backend="cache_dit",
-                    cache_config={
-                        "max_warmup_steps": 4,  # Optimized for turbo models
-                        "Fn_compute_blocks": 1,
-                        "residual_diff_threshold": 0.24,
-                    },
-                )
-                logger.info("Cache-DiT acceleration enabled")
+                try:
+                    self.omni = Omni(
+                        model=self.model_id,
+                        gpu_memory_utilization=gpu_memory_utilization,
+                        cache_backend="cache_dit",
+                        cache_config={
+                            "max_warmup_steps": 4,  # Optimized for turbo models
+                            "Fn_compute_blocks": 1,
+                            "residual_diff_threshold": 0.24,
+                        },
+                    )
+                    logger.info("Cache-DiT acceleration enabled")
+                except Exception as cache_dit_error:
+                    logger.warning(
+                        f"Cache-DiT initialization failed: {cache_dit_error}. "
+                        "Falling back to basic initialization without Cache-DiT."
+                    )
+                    self.omni = Omni(
+                        model=self.model_id,
+                        gpu_memory_utilization=gpu_memory_utilization,
+                    )
+                    logger.info("Omni initialized without Cache-DiT acceleration")
             else:
                 # Basic initialization without Cache-DiT
                 logger.info("Initializing Omni...")
