@@ -55,6 +55,11 @@ RUN pip3 install --no-cache-dir --upgrade pip \
 # in sd3_transformer.py which causes initialization failure with SD3.5 Large Turbo
 RUN python3 patches/fix_dual_attention.py
 
+# Apply vllm-omni patch to fix config() decorator error with vLLM v0.14.0
+# This patch replaces @config(config=ConfigDict(...)) with @config
+# to fix incompatibility between vllm-omni and vLLM v0.14.0's API
+RUN python3 patches/fix_config_error.py
+
 # Copy application code
 COPY app/ ./app/
 
