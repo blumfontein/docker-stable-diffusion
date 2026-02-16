@@ -6,7 +6,7 @@ safetensors==0.4.5
 
 # vLLM and vLLM-Omni for optimized inference
 vllm==0.14.0
-git+https://github.com/vllm-project/vllm-omni.git@main
+git+https://github.com/vllm-project/vllm-omni.git@v0.14.0
 
 # Web Framework
 fastapi>=0.120.0
