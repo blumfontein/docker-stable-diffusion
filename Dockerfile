@@ -92,6 +92,10 @@ ENV MAX_WORKERS=1
 # GPU memory utilization (0.0 to 1.0, default 90% of available GPU memory)
 ENV GPU_MEMORY_UTILIZATION=0.9
 
+# Default negative prompt (used when not provided in API request)
+# Default: Chinese prompt from Qwen-Image-2512 for realistic image generation
+ENV DEFAULT_NEGATIVE_PROMPT=
+
 # Expose the API port
 EXPOSE 8000
 

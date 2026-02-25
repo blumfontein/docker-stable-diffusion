@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 # Threshold for batch cleanup - use empty_cache for batches larger than this
 BATCH_CLEANUP_THRESHOLD = 999
 
+# Default negative prompt from Qwen-Image-2512 (https://huggingface.co/Qwen/Qwen-Image-2512)
+# Can be overridden via DEFAULT_NEGATIVE_PROMPT environment variable
+_BUILTIN_NEGATIVE_PROMPT = (
+    "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，"
+    "人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲。"
+)
+DEFAULT_NEGATIVE_PROMPT = os.getenv("DEFAULT_NEGATIVE_PROMPT", _BUILTIN_NEGATIVE_PROMPT)
+
 
 class ImageGenerator:
     """Handles Stable Diffusion model loading and image generation.
@@ -192,6 +200,7 @@ class ImageGenerator:
         n: int = 1,
         num_inference_steps: Optional[int] = None,
         guidance_scale: Optional[float] = None,
+        negative_prompt: Optional[str] = None,
     ) -> List[str]:
         """Generate images from a text prompt.
 
@@ -205,6 +214,8 @@ class ImageGenerator:
             guidance_scale: Guidance scale for generation. If None, uses smart
                 defaults based on model type (0.0 for turbo, 4.5 for others) or
                 GUIDANCE_SCALE environment variable.
+            negative_prompt: Text describing what to avoid in the generated image.
+                If None, uses DEFAULT_NEGATIVE_PROMPT env var or built-in default.
 
         Returns:
             List of base64-encoded PNG image strings.
@@ -218,9 +229,13 @@ class ImageGenerator:
         if guidance_scale is None:
             guidance_scale = self._get_default_guidance_scale()
 
+        # Resolve negative_prompt: explicit param > env var > builtin default
+        if negative_prompt is None:
+            negative_prompt = DEFAULT_NEGATIVE_PROMPT
         logger.info(
             f"Using num_inference_steps={num_inference_steps}, "
-            f"guidance_scale={guidance_scale} "
+            f"guidance_scale={guidance_scale}, "
+            f"negative_prompt={negative_prompt[:50]}... "
             f"(turbo_model={self._is_turbo_model()})"
         )
         if not self.is_loaded or self.omni is None:
@@ -251,7 +266,12 @@ class ImageGenerator:
                         num_inference_steps=num_inference_steps,
                         num_outputs_per_prompt=n,
                     )
-                    outputs = self.omni.generate(prompt, sampling_params)
+                    # Pass prompt as OmniTextPrompt dict with negative_prompt
+                    prompt_input = {
+                        "prompt": prompt,
+                        "negative_prompt": negative_prompt,
+                    }
+                    outputs = self.omni.generate(prompt_input, sampling_params)
 
                 # Extract images from vLLM-Omni output structure
                 # Output format: outputs[0].request_output[0].images -> List[PIL.Image]

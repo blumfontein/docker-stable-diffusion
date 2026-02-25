@@ -212,6 +212,7 @@ async def queue_worker() -> None:
                     n=request.n,
                     num_inference_steps=request.num_inference_steps,
                     guidance_scale=request.guidance_scale,
+                    negative_prompt=request.negative_prompt,
                 )
 
                 # Execute generation with timeout

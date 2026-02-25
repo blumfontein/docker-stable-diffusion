@@ -59,6 +59,12 @@ class ImageGenerationRequest(BaseModel):
         le=20.0,
         description="Guidance scale for generation. Default: 0.0 for turbo models, 4.5 for others.",
     )
+    negative_prompt: Optional[str] = Field(
+        default=None,
+        max_length=4096,
+        description="Negative prompt to guide what to avoid in generation. "
+        "If not provided, uses DEFAULT_NEGATIVE_PROMPT env variable or built-in default.",
+    )
 
     @field_validator("size")
     @classmethod
